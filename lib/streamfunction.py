@@ -130,6 +130,83 @@ def ZonIntSF(data_list, mask_list, var_dict):
 
     return sf_xint_cube
 
+def ResidualOverturning(data_list, mask_list, nn_rhop, var_dict):
+    """
+    Calculate the stream function of the zonally integrated flow
+    """
+    import numpy as np
+    import iris
+    from iris.cube import Cube
+    from iris.coords import AuxCoord, DimCoord
+    from cubeprep import CubeListExtract as CLE
+    from fortran_lib import fortran_lib
+
+
+
+    v_cube = CLE(data_list, var_dict['v'])
+    rhop_cube = CLE(data_list, var_dict['rho'] )
+
+    tmask = iris.util.squeeze(CLE(mask_list, var_dict['tmask'])).data
+    vmask = iris.util.squeeze(CLE(mask_list, var_dict['vmask'])).data
+    # vmask2d = iris.util.squeeze(CLE(mask_list, var_dict['vmask2d'])).data
+
+    e1v = iris.util.squeeze(CLE(mask_list, var_dict['e1v'])).data
+    e2v = iris.util.squeeze(CLE(mask_list, var_dict['e2v'])).data
+    e3v = iris.util.squeeze(CLE(mask_list, var_dict['e3v'])).data
+
+    e1t = iris.util.squeeze(CLE(mask_list, var_dict['e1v'])).data
+    e2t = iris.util.squeeze(CLE(mask_list, var_dict['e2v'])).data
+    e3t = iris.util.squeeze(CLE(mask_list, var_dict['e3v'])).data
+    # deptht_cube = iris.util.squeeze(CLE(mask_list, var_dict['deptht']))
+
+    # #We need to calculate the density and depth centred on the V points
+    rhop_v = (tmask*rhop_cube.data*e1t*e2t + jp1(tmask*rhop_cube.data*e1t*e2t))/((tmask+jp1(tmask))*e1v*e2v)  
+    rhop_v = np.ma.masked_array( rhop_v, mask = np.broadcast_to(~np.ma.make_mask(vmask), rhop_v.shape))
+
+    # depthv = (tmask*deptht_cube.data*e1t*e2t + jp1(tmask*deptht_cube.data*e1t*e2t))/((tmask+jp1(tmask))*e1v*e2v)  
+    # depthv = np.ma.masked_array( depthv, mask = ~np.ma.make_mask(vmask))
+
+    rhop_min = np.min(rhop_v)
+    rhop_max = np.max(rhop_v)
+    rhop_coord = np.linspace(rhop_min, rhop_max, num=nn_rhop)
+    drhop = rhop_coord[1] - rhop_coord[0]
+
+    res_ov, rhop_depth, output_mask = fortran_lib.residual_overturning(v_cube.data, rhop_v.data, rhop_coord, e3v, e1v, ~np.ma.make_mask(vmask))
+
+    res_ov = np.ma.masked_array(res_ov, mask=output_mask)
+    rhop_depth = np.ma.masked_array(rhop_depth, mask=output_mask)
+
+    rhop_coord = DimCoord(rhop_coord, long_name = 'Density_level', units = rhop_cube.units)
+    rhop_depth = AuxCoord(rhop_depth, long_name='IsopycnalDepth', units='m')
+    lat = v_cube.coord("latitude")
+    lon = v_cube.coord("longitude")
+
+    try: 
+        time_coord = v_cube.coord("time")
+    except:
+        aux_time = v_cube.aux_coords[0]
+        aux_time.rename("aux_time")
+        time_coord = v_cube.coord("time")
+
+    res_ov_cube = Cube(res_ov/1e6, dim_coords_and_dims=[(time_coord,0),(rhop_coord,1)])
+    res_ov_cube.long_name = 'Residual overturning function'
+    res_ov_cube.var_name = 'res_ov'
+    res_ov_cube.units = 'Sv'
+    res_ov_cube.add_aux_coord(rhop_depth, [0,1,2,3])
+    res_ov_cube.add_aux_coord(lon, [2,3])
+    res_ov_cube.add_aux_coord(lat, [2,3])
+
+    return res_ov_cube
+
+
+
+def jp1(M): 
+    import numpy as np
+    output = np.roll(M, -1, axis=-2)
+    output[...,-1,:] = 0.
+
+    return output
+
 
 
 

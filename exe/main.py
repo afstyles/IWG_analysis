@@ -28,6 +28,8 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, rel_v
     data_list = iris.load(data_dir + "/*grid*.nc")
     mask_list = iris.load(data_dir + "/mesh_mask.nc")
 
+    print(mask_list)
+
     print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     print("run_analysis")
     print("Outputs will be found at: ", out_dir)
@@ -79,9 +81,15 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, rel_v
     if sf_xint_log == True:
         print("")
         print("Calculating stream function of the x-integrated flow (Overturning) >>>")
-        sf_xint_cube = streamfunction.ZonIntSF(data_list, mask_list, varname_dict)
+        # sf_xint_cube = streamfunction.ZonIntSF(data_list, mask_list, varname_dict)
 
-        iris.save(sf_xint_cube, out_dir + '/sf_xint.nc')
+        # iris.save(sf_xint_cube, out_dir + '/sf_xint.nc')
+        res_ov_cube = streamfunction.ResidualOverturning(data_list, mask_list, nn_rhop, varname_dict)
+        print(res_ov_cube)
+        # print(v_rhop_cube)
+        iris.save(res_ov_cube, out_dir + '/res_ov.nc')
+        # iris.save(v_rhop_cube, out_dir + '/v_rhop.nc')
+
 
 
 

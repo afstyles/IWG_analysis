@@ -37,7 +37,7 @@ module fortran_lib
         !Mask for output_array (1=masked, 0=unmasked) !! Python convention !! (t,rho,y,x)
         logical,intent(out) :: output_mask(SIZE(array,1),SIZE(rhop_coord,1),SIZE(array,3),SIZE(array,4))
 
-        integer :: ii, ij, it, ip, ik, ni, nj, nt, nk, nk_avail, np, kmin, kind, pmin, k1, k2
+        integer :: ii, ij, it, ip, ik, ni, nj, nt, nk, nk_avail, np, kmin, kind, pmin, k1, k2, ind
         real :: column(SIZE(array,2))
         logical :: column_mask(SIZE(array,2))
         real :: rhop_column(SIZE(array,2))
@@ -55,20 +55,42 @@ module fortran_lib
         !Operate on each column
         do ii = 1,ni
             do ij = 1,nj
-                column_mask = mask(:,ij,ii)
-                nk_avail = COUNT(column_mask)
-                                         
-                if (nk_avail == 0) THEN
-                    !
-                    !If all points are masked, set all output values to zero and mask
-                    output_array(:,:,ij,ii) = 0.
-                    output_mask(:,:,ij,ii) = .TRUE.
-                    continue
+                do it = 1,nt
 
-                else if (nk_avail == 1) THEN
+                    column_mask = mask(:,ij,ii)
+                    column = array(it,:,ij,ii)
+                    rhop_column = rhop_array(it,:,ij,ii)
                     !
-                    do it = 1,nt
+                    !Filter the columns for any decreases in density with depth. >>>>
+                    ind = 1
+                    do ik = 2,nk
+                        if ((rhop_column(ik) > rhop_column(ind)).AND.(column_mask(ik))) then
+                            rhop_column(ind + 1) = rhop_column(ik)   
+                            column(ind + 1) = column(ik)
+                            column_mask(ind + 1) = column_mask(ik)
 
+                            ind = ind + 1
+
+                        end if
+                    end do
+                    !
+                    do ik = ind + 1, nk
+                        rhop_column(ik) = 0.
+                        column(ik) = 0.
+                        column_mask(ik) = .false.
+                    end do
+
+                    nk_avail = COUNT(column_mask)
+
+                                            
+                    if (nk_avail == 0) THEN
+                        !
+                        !If all points are masked, set all output values to zero and mask
+                        output_array(:,:,ij,ii) = 0.
+                        output_mask(:,:,ij,ii) = .TRUE.
+
+                    else if (nk_avail == 1) THEN
+                        !
                         kind = 0
                         do ik = 1,nk
                             if (column_mask(ik)) THEN 
@@ -89,84 +111,88 @@ module fortran_lib
                         !All other density levels are masked 
                         output_mask(it,:,ij, ii) = .true.
                         output_mask(it, pmin, ij, ii) = .false.
-                    end do
-                    !
-                    continue
-                end if
 
-
-                do it = 1,nt
-                    do ip = 1,np
-                        !
-                        column = array(it,:,ij,ii)
-                        rhop_column = rhop_array(it,:,ij,ii)
-                        irhop = rhop_coord(ip)
-                        !
-                        rhop_column_max = maxval(rhop_column, mask=column_mask)
-                        rhop_column_min = minval(rhop_column, mask=column_mask)
-
-                        if ( (irhop < rhop_column_max).AND.(irhop > rhop_column_min) ) THEN
-
-                            kmin = MINLOC(ABS(irhop-rhop_column), 1, MASK=column_mask)
-                            !
-                            if (irhop - rhop_column(kmin) > 0) THEN
-                                k1 = kmin
-                                k2 = kmin + 1
-                            else
-                                k1 = kmin - 1
-                                k2 = kmin
-                            end if
-                            !
-                            !If k1 and k2 lie within the model domain we do not need to worry about boundaries
-                            ! if ((k1 >= 1).and.(k2<=nk_avail)) THENls 
-                            rhop1 = rhop_column(k1)
-                            rhop2 = rhop_column(k2)
-
-                            point1 = column(k1)
-                            point2 = column(k2)
-                            
-                            output_array(it,ip,ij,ii) = point1 + (point2-point1)*(irhop - rhop1)/(rhop2-rhop1)
-
-                        else 
-
-                            !Values near the top and bottom boundaries depend on the boundary_mode
-                            select case (boundary_mode)
-                                !
-                                case("mask")
-                                    !
-                                    output_array(it,ip,ij,ii) = 0.
-                                    output_mask(it,ip,ij,ii) = .TRUE.
-                                    !
-                                case("extend")
-                                    !
-                                    !Extend 
-                                    if ( irhop <= rhop_column_min  ) THEN
-                                        output_array(it,ip,ij,ii) = array(it,1,ij,ii)
-                                    else
-                                        output_array(it,ip,ij,ii) = array(it,nk_avail,ij,ii)
-                                    end if
-                                    !
-                                case("extrapolate")
-                                    !
-                                    if ( irhop <= rhop_column_min  ) THEN
-                                        point1 = column(1)
-                                        point2 = column(2)
-                                        rhop1 = rhop_column(1)
-                                        rhop2 = rhop_column(2)
-                                    else
-                                        point1 = column(nk_avail - 1)
-                                        point2 = column(nk_avail)
-                                        rhop1 = rhop_column(nk_avail-1)
-                                        rhop2 = rhop_column(nk_avail)
-                                    end if
-                                    !
-                                    output_array(it,ip,ij,ii) = point1 + (point2 - point1)*(irhop-rhop1)/(rhop2-rhop1)
-                                !
-                            end select
-
+                        if( (ii == 30).AND.(ij==3).AND.(it==21)) THEN
+                            print *, "single_rhop = ", single_rhop
+                            print *, "single_point = ", single_point
+                            print *, "output_array = ", output_array(it,:,ij,ii)
+                            print *, "output_mask = ", output_mask(it,:,ij,ii)
+                            print *, "pmin = ", pmin
+                            print *, "nk_avail =", nk_avail
                         end if
+                    
+                    else
 
-                    end do
+                        do ip = 1,np
+                            !>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+                            irhop = rhop_coord(ip)
+                            !
+                            !
+                            rhop_column_max = maxval(rhop_column, mask=column_mask)
+                            rhop_column_min = minval(rhop_column, mask=column_mask)
+
+                            if ( (irhop < rhop_column_max).AND.(irhop > rhop_column_min) ) THEN
+
+                                kmin = MINLOC(ABS(irhop-rhop_column), 1, MASK=column_mask)
+                                !
+                                if (irhop - rhop_column(kmin) > 0) THEN
+                                    k1 = kmin
+                                    k2 = kmin + 1
+                                else
+                                    k1 = kmin - 1
+                                    k2 = kmin
+                                end if
+                                !
+                                !If k1 and k2 lie within the model domain we do not need to worry about boundaries
+                                ! if ((k1 >= 1).and.(k2<=nk_avail)) THENls 
+                                rhop1 = rhop_column(k1)
+                                rhop2 = rhop_column(k2)
+
+                                point1 = column(k1)
+                                point2 = column(k2)
+                                
+                                output_array(it,ip,ij,ii) = point1 + (point2-point1)*(irhop - rhop1)/(rhop2-rhop1)
+
+                            else 
+
+                                !Values near the top and bottom boundaries depend on the boundary_mode
+                                select case (boundary_mode)
+                                    !
+                                    case("mask")
+                                        !
+                                        output_array(it,ip,ij,ii) = 0.
+                                        output_mask(it,ip,ij,ii) = .TRUE.
+                                        !
+                                    case("extend")
+                                        !
+                                        !Extend 
+                                        if ( irhop <= rhop_column_min  ) THEN
+                                            output_array(it,ip,ij,ii) = array(it,1,ij,ii)
+                                        else
+                                            output_array(it,ip,ij,ii) = array(it,nk_avail,ij,ii)
+                                        end if
+                                        !
+                                    case("extrapolate")
+                                        !
+                                        if ( irhop <= rhop_column_min  ) THEN
+                                            point1 = column(1)
+                                            point2 = column(2)
+                                            rhop1 = rhop_column(1)
+                                            rhop2 = rhop_column(2)
+                                        else
+                                            point1 = column(nk_avail - 1)
+                                            point2 = column(nk_avail)
+                                            rhop1 = rhop_column(nk_avail-1)
+                                            rhop2 = rhop_column(nk_avail)
+                                        end if
+                                        !
+                                        output_array(it,ip,ij,ii) = point1 + (point2 - point1)*(irhop-rhop1)/(rhop2-rhop1)
+                                    !
+                                end select
+
+                            end if
+                        end do
+                    end if
                 end do
 
 
@@ -175,5 +201,194 @@ module fortran_lib
             end do
         end do
     end subroutine z2rhop
+
+    subroutine residual_overturning(v_array, rhop_array, rhop_coord, e3, e1, vmask, res_ov, rhop_depth, output_mask )
+        !
+        real, intent(in) :: v_array(:,:,:,:) ! Array of meridional velocities (t,z,y,x)
+        !
+        real, intent(in) :: rhop_array(SIZE(v_array,1),SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4))
+        !
+        real, intent(in) :: rhop_coord(:)    !Density coordinates to interpolate to (rho)
+        !
+        real, intent(in) :: e3(SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4)) ! Cell thicknesses for meridional velocities (z,y,x)
+        !
+        real, intent(in) :: e1(SIZE(v_array,3),SIZE(v_array,4)) ! Zonal cell widths for meridional velocities (y,x)
+        !
+        logical, intent(in) :: vmask(SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4)) ! Mask for v points (True = Masked)
+        !
+        real, intent(out) :: res_ov(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Residual overturning stream function (t,rho,y,x)
+        !
+        real, intent(out) :: rhop_depth(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Depth of isopycnals
+        !
+        logical, intent(out) :: output_mask(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Mask for both output arrays (True = Masked)
+        !
+        integer :: ii, ij, ik, ip, it, ni, nj, nk, nt, np, nk_avail, ip_min, kind
+        real :: v_single, e3_single, rhop_single, irhop, drhop, rhop_close
+        real :: v_column(SIZE(v_array,2))
+        logical :: vmask_column(SIZE(v_array,2))
+        real :: rhop_column(SIZE(v_array,2))
+        real :: e3_column(SIZE(v_array,2))
+        real :: rhop_bounds(SIZE(v_array,2)+1)
+        real :: v_zint(SIZE(v_array,1),SIZE(v_array,3),SIZE(v_array,4))
+
+
+        ni = SIZE(v_array,4)
+        nj = SIZE(v_array,3)
+        nk = SIZE(v_array,2)
+        nt = SIZE(v_array,1)
+        np = SIZE(rhop_coord,1)
+
+        output_mask (:,:,:,:) = .false.
+        rhop_depth(:,:,:,:) = 0.
+        res_ov(:,:,:,:) = 0.
+
+        do ii = 1,ni
+            do ij = 1,nj
+                !
+                !Look at the geometry of the column and determine if there are more than one data points
+                vmask_column = vmask(:,ij,ii)
+
+                !Count the number of unmasked points
+                nk_avail = COUNT(.NOT.vmask_column)
+
+                select case(nk_avail)
+                    !
+                    case(0) !Land column - No unmasked points
+                        output_mask(:,:,ij,ii) = .true.
+                        res_ov(:,:,ij,ii) = 0.
+                        rhop_depth(:,:,ij,ii) = 0.
+                    !
+                    case(1) !Single point column - One unmasked point
+                        output_mask(:,:,ij,ii) = .true.
+                        res_ov(:,:,ij,ii) = 0.
+                        rhop_depth(:,:,ij,ii) = 0.
+                        !
+                        !Find the location of the single unmasked point
+                        do ik = 1,nk
+                            if (.NOT.vmask_column(ik)) then
+                                kind = ik
+                                exit
+                            end if
+                        end do
+                        !
+                        e3_single = e3(kind, ij, ii)
+                        !
+                        do it = 1,nt
+                            v_single = v_array(it,kind,ij,ii)
+                            rhop_single = rhop_array(it,kind,ij,ii)
+                            !
+                            ip_min = MINLOC( ABS(rhop_coord - rhop_single), 1 ) !Find the closest isopycnal coordinate
+                            rhop_close = rhop_coord(ip_min)
+                            !
+                            output_mask(it,ip_min,ij,ii) = .false.
+                            res_ov(it,ip_min,ij,ii) = v_single
+                            rhop_depth(it,ip_min,ij,ii) = e3_single / 2
+                        end do
+                    
+                    case default !More than one unmasked point in the column
+                        !
+                        e3_column = e3(:,ij,ii)
+                        !
+                        do it = 1,nt
+                            v_column = v_array(it,:,ij,ii)
+                            rhop_column = rhop_array(it,:,ij,ii)
+                            !
+                            !Estimate the values of density between the v points
+                            rhop_bounds(:) = 0.
+                            !
+                            !Extrapolate at the top to find the surface density
+                            drhop = (rhop_column(2)-rhop_column(1))*e3_column(1)/(e3_column(2)+e3_column(1))
+                            rhop_bounds(1) = rhop_column(1) - drhop
+                            !
+                            !Extrapolate at the bottom to find the bottom density
+                            drhop = (rhop_column(nk_avail)-rhop_column(nk_avail-1))                                   &
+                                    *e3_column(nk_avail)/(e3_column(nk_avail)+e3_column(nk_avail-1))
+                            rhop_bounds(nk_avail+1) = rhop_column(nk_avail) + drhop
+                            !
+                            do ik = 2,nk_avail
+                                !
+                                drhop = (rhop_column(ik)-rhop_column(ik-1))                                           &
+                                    * e3_column(ik-1)/(e3_column(ik-1)+e3_column(ik))
+                                rhop_bounds(ik) = rhop_column(ik-1) + drhop
+                                !
+                            end do
+                            !
+                            do ip = 1,np
+                                !
+                                irhop = rhop_coord(ip)
+
+                                if( (ii == 13).AND.(ij==23).AND.(it==1).AND.(ip==23) ) then
+                                    print *, "irhop >>>>>"
+                                    print *, irhop
+                                    
+                                    print *, "rhop_column >>>>"
+                                    print *, rhop_column
+
+                                    print *, "v_column >>>>"
+                                    print *, v_column
+
+                                    print *, "vmask_column >>>>"
+                                    print *, vmask_column
+                                    
+                                    print *, "rhop_bounds >>>>"
+                                    print *, rhop_bounds
+
+                            
+
+                                end if
+
+                                if ((irhop < rhop_bounds(1)).OR.(irhop > rhop_bounds(nk_avail+1))) then
+                                    output_mask(it,ip,ij,ii) = .true.
+                                    res_ov(it,ip,ij,ii) = 0.
+                                    rhop_depth(it,ip,ij,ii) = 0.
+                                
+                                else
+                                    !
+                                    do ik = 1,nk_avail
+                                        !
+                                        if ( ( irhop >= rhop_bounds(ik) ).AND.(irhop < rhop_bounds(ik+1)) ) then
+                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii)                          &
+                                            + v_column(ik)*e3_column(ik)*(irhop - rhop_bounds(ik))             &
+                                            /(rhop_bounds(ik+1)-rhop_bounds(ik))
+
+                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii)                  &
+                                            + e3_column(ik) * (irhop - rhop_bounds(ik))                        &
+                                            /(rhop_bounds(ik+1)-rhop_bounds(ik))
+                                            exit
+                                        else
+                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii) + v_column(ik)*e3_column(ik)
+                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii) + e3_column(ik)
+                                        end if
+                                        !
+                                    end do
+                                    !
+                                end if
+
+
+                                !
+                            end do
+                            !
+                        end do
+
+                end select
+
+            end do
+        end do
+
+        !Convert to an integral from the bottom rather than the top by subtracting the full depth integral of v
+        do it = 1,nt
+            do ik = 1,nk
+                v_zint(it,:,:) = v_zint(it,:,:) + v_array(it,ik,:,:) * e3(ik,:,:)
+            end do
+        end do
+        
+        do it = 1,nt
+            do ip = 1,np
+                res_ov(it,ip,:,:) = res_ov(it,ip,:,:) - v_zint(it,:,:)
+                res_ov(it,ip,:,:) = res_ov(it,ip,:,:)*e1(:,:)  !Multiply by cell width to calculate volume flux
+            end do
+        end do
+
+    end subroutine residual_overturning
 
 end module fortran_lib
