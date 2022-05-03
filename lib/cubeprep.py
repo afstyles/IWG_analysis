@@ -1,6 +1,20 @@
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# cubeprep.py
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>
+"""
+            _                                            
+           | |                                           
+  ___ _   _| |__   ___ _ __  _ __ ___ _ __   _ __  _   _ 
+ / __| | | | '_ \ / _ \ '_ \| '__/ _ \ '_ \ | '_ \| | | |
+| (__| |_| | |_) |  __/ |_) | | |  __/ |_) || |_) | |_| |
+ \___|\__,_|_.__/ \___| .__/|_|  \___| .__(_) .__/ \__, |
+                      | |            | |    | |     __/ |
+                      |_|            |_|    |_|    |___/ 
+cubeprep.py
+
+Routines and information for extracting data from IRIS cubelists
+
+Contains methods:
+    CubeListExtract --> Extract a cube from a CubeList object using the variable name
+    var_names --> Returns a dictionary relating generic names of variables to specific variable names for the data.
+"""
 
 def CubeListExtract(cube_list, var_name):
     """
@@ -30,32 +44,34 @@ def var_names():
     """
     Load the variable names for cubes that might be used in the analysis
     """
-    varname_dict = { 'u'  : 'uoce' ,     #x velocity
-                 'v'  : 'voce' ,     #y velocity
-                 'w'  : 'woce' ,     #z velocity
-                 'rho': 'swsigthet' ,#Density
-                 'ssh': 'ssh'  ,     # ssh 
-                 'e1u': 'e1u' ,      
-                 'e2u': 'e2u' ,  
-                 'e3u': 'e3u_0',     
-                 'e1v': 'e1v' ,       
-                 'e2v': 'e2v' ,
-                 'e3v': 'e3v_0',       
-                 'e1t': 'e1t' ,       
-                 'e2t': 'e2t' ,
-                 'e3t': 'e3t_0',
-                 'e1f': 'e1f' ,      
-                 'e2f': 'e2f' ,
-                 'e3w': 'e3w_0' ,
-                 'deptht': 'gdept_0',
-                 'umask': 'umask',    
-                 'vmask': 'vmask',
-                 'tmask': 'tmask',  
-                 'umask2d': 'umaskutil',    
-                 'vmask2d': 'vmaskutil',
-                 'tmask2d': 'tmaskutil', 
-                 'lon': 'nav_lon',
-                 'lat': 'nav_lat', 
+    varname_dict = { 'u'  : 'uoce' ,     # x velocity
+                 'v'  : 'voce' ,         # y velocity
+                 'w'  : 'woce' ,         # z velocity
+                 'rho': 'swsigthet' ,    # Density
+                 'temp': 'toce',         # Temperature
+                 'sal' : 'soce',         # Salinity
+                 'ssh': 'ssh'  ,         # Sea surface height 
+                 'e1u': 'e1u' ,          # U cell width     (i direction)
+                 'e2u': 'e2u' ,          # U cell width     (j direction)
+                 'e3u': 'e3u_0',         # U cell thickness (k direction)
+                 'e1v': 'e1v' ,          # V cell width     (i direction)
+                 'e2v': 'e2v' ,          # V cell width     (j direction)
+                 'e3v': 'e3v_0',         # V cell thickness (k direction)
+                 'e1t': 'e1t' ,          # T cell width     (i direction)
+                 'e2t': 'e2t' ,          # T cell width     (j direction)
+                 'e3t': 'e3t_0',         # T cell thickness (k direction)
+                 'e1f': 'e1f' ,          # F cell width     (i direction) 
+                 'e2f': 'e2f' ,          # F cell width     (j direction)
+                 'e3w': 'e3w_0' ,        # W cell thickness (k direction)
+                 'deptht': 'gdept_0',    # T cell depth 
+                 'umask': 'umask',       # U cell mask 
+                 'vmask': 'vmask',       # V cell mask
+                 'tmask': 'tmask',       # T cell mask
+                 'umask2d': 'umaskutil', # U cell mask (2d fields)
+                 'vmask2d': 'vmaskutil', # V cell mask (2d fields)
+                 'tmask2d': 'tmaskutil', # T cell mask (2d fields)
+                 'x': 'nav_lon',       # X coordinates of T cell (km)
+                 'y': 'nav_lat',       # Y coordinates of T cell (km)
                 }
 
     return varname_dict

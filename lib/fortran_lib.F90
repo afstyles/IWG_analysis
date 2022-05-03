@@ -2,9 +2,210 @@ module fortran_lib
 
     !Ths module contains various grid point calculations that are significnatly faster if coded in Fortran
 
+    ! Remember to compile this code when any changes are made using the command
+    ! f2py -c -m fortran_lib fortran_lib.F90 ; mv fortran_lib.*.so fortran_lib.so
+
     implicit none
 
     contains
+
+    subroutine residual_overturning(v_array, rhop_array, rhop_coord, e3, e1, vmask, res_ov, rhop_depth, output_mask )
+        !
+        real, intent(in) :: v_array(:,:,:,:) ! Array of meridional velocities (t,z,y,x)
+        !
+        real, intent(in) :: rhop_array(SIZE(v_array,1),SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4))
+        !
+        real, intent(in) :: rhop_coord(:)    !Density coordinates to interpolate to (rho)
+        !
+        real, intent(in) :: e3(SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4)) ! Cell thicknesses for meridional velocities (z,y,x)
+        !
+        real, intent(in) :: e1(SIZE(v_array,3),SIZE(v_array,4)) ! Zonal cell widths for meridional velocities (y,x)
+        !
+        logical, intent(in) :: vmask(SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4)) ! Mask for v points (True = Masked)
+        !
+        real, intent(out) :: res_ov(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Residual overturning stream function (t,rho,y,x)
+        !
+        real, intent(out) :: rhop_depth(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Depth of isopycnals
+        !
+        logical, intent(out) :: output_mask(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Mask for both output arrays (True = Masked)
+        !
+        integer :: ii, ij, ik, ip, it, ni, nj, nk, nt, np, nk_avail, ip_min, kind
+        real :: v_single, e3_single, rhop_single, irhop, drhop, rhop_close
+        real :: v_column(SIZE(v_array,2))
+        logical :: vmask_column(SIZE(v_array,2))
+        real :: rhop_column(SIZE(v_array,2))
+        real :: e3_column(SIZE(v_array,2))
+        real :: rhop_bounds(SIZE(v_array,2)+1)
+        real :: v_zint(SIZE(v_array,1),SIZE(v_array,3),SIZE(v_array,4))
+
+
+        ni = SIZE(v_array,4)
+        nj = SIZE(v_array,3)
+        nk = SIZE(v_array,2)
+        nt = SIZE(v_array,1)
+        np = SIZE(rhop_coord,1)
+
+        output_mask (:,:,:,:) = .false.
+        rhop_depth(:,:,:,:) = 0.
+        res_ov(:,:,:,:) = 0.
+        v_zint(:,:,:) = 0.
+
+        do ii = 1,ni
+            do ij = 1,nj
+                !
+                !Look at the geometry of the column and determine if there are more than one data points
+                vmask_column = vmask(:,ij,ii)
+
+                !Count the number of unmasked points
+                nk_avail = COUNT(.NOT.vmask_column)
+
+                select case(nk_avail)
+                    !
+                    case(0) !Land column - No unmasked points
+                        output_mask(:,:,ij,ii) = .true.
+                        res_ov(:,:,ij,ii) = 0.
+                        rhop_depth(:,:,ij,ii) = 0.
+                    !
+                    case(1) !Single point column - One unmasked point
+                        output_mask(:,:,ij,ii) = .true.
+                        res_ov(:,:,ij,ii) = 0.
+                        rhop_depth(:,:,ij,ii) = 0.
+                        !
+                        !Find the location of the single unmasked point
+                        do ik = 1,nk
+                            if (.NOT.vmask_column(ik)) then
+                                kind = ik
+                                exit
+                            end if
+                        end do
+                        !
+                        e3_single = e3(kind, ij, ii)
+                        !
+                        do it = 1,nt
+                            v_single = v_array(it,kind,ij,ii)
+                            rhop_single = rhop_array(it,kind,ij,ii)
+                            !
+                            ip_min = MINLOC( ABS(rhop_coord - rhop_single), 1 ) !Find the closest isopycnal coordinate
+                            rhop_close = rhop_coord(ip_min)
+                            !
+                            output_mask(it,ip_min,ij,ii) = .false.
+                            res_ov(it,ip_min,ij,ii) = v_single
+                            rhop_depth(it,ip_min,ij,ii) = e3_single / 2
+
+                        end do
+                    
+                    case default !More than one unmasked point in the column
+                        !
+                        e3_column = e3(:,ij,ii)
+                        !
+                        do it = 1,nt
+                            v_column = v_array(it,:,ij,ii)
+                            rhop_column = rhop_array(it,:,ij,ii)
+                            !
+                            !Estimate the values of density between the v points
+                            rhop_bounds(:) = 0.
+                            !
+                            !Extrapolate at the top to find the surface density
+                            drhop = (rhop_column(2)-rhop_column(1))*e3_column(1)/(e3_column(2)+e3_column(1))
+                            rhop_bounds(1) = rhop_column(1) - drhop
+                            !
+                            !Extrapolate at the bottom to find the bottom density
+                            drhop = (rhop_column(nk_avail)-rhop_column(nk_avail-1))                                   &
+                                    *e3_column(nk_avail)/(e3_column(nk_avail)+e3_column(nk_avail-1))
+                            rhop_bounds(nk_avail+1) = rhop_column(nk_avail) + drhop
+                            !
+                            do ik = 2,nk_avail
+                                !
+                                drhop = (rhop_column(ik)-rhop_column(ik-1))                                           &
+                                    * e3_column(ik-1)/(e3_column(ik-1)+e3_column(ik))
+                                rhop_bounds(ik) = rhop_column(ik-1) + drhop
+                                !
+                            end do
+                            !
+                            do ip = 1,np
+                                !
+                                irhop = rhop_coord(ip)
+
+                                if( (ii == 13).AND.(ij==23).AND.(it==1).AND.(ip==23) ) then
+                                    print *, "irhop >>>>>"
+                                    print *, irhop
+                                    
+                                    print *, "rhop_column >>>>"
+                                    print *, rhop_column
+
+                                    print *, "v_column >>>>"
+                                    print *, v_column
+
+                                    print *, "vmask_column >>>>"
+                                    print *, vmask_column
+                                    
+                                    print *, "rhop_bounds >>>>"
+                                    print *, rhop_bounds
+
+                            
+
+                                end if
+
+                                if ((irhop < rhop_bounds(1)).OR.(irhop > rhop_bounds(nk_avail+1))) then
+                                    output_mask(it,ip,ij,ii) = .true.
+                                    res_ov(it,ip,ij,ii) = 0.
+                                    rhop_depth(it,ip,ij,ii) = 0.
+                                
+                                else
+                                    !
+                                    do ik = 1,nk_avail
+                                        
+                                        if ( ( irhop >= rhop_bounds(ik) ).AND.(irhop < rhop_bounds(ik+1)) ) then
+                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii)                          &
+                                            + v_column(ik)*e3_column(ik)*(irhop - rhop_bounds(ik))             &
+                                            /(rhop_bounds(ik+1)-rhop_bounds(ik))
+
+                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii)                  &
+                                            + e3_column(ik) * (irhop - rhop_bounds(ik))                        &
+                                            /(rhop_bounds(ik+1)-rhop_bounds(ik))
+
+                                            exit
+                                        else
+                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii) + v_column(ik)*e3_column(ik)
+                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii) + e3_column(ik)
+                                        end if
+
+
+                                        
+                                    end do
+                                    !
+                                end if
+
+
+                                !
+                            end do
+                            !
+                        end do
+
+                end select
+
+            end do
+        end do
+
+        !Convert to an integral from the bottom by subtracting the bottom value of res_ov
+        ! do it = 1,nt
+        !     do ik = 1,nk
+        !         where(.NOT.vmask(ik,:,:))
+        !             v_zint(it,:,:) = v_zint(it,:,:) + v_array(it,ik,:,:) * e3(ik,:,:)
+        !         end where
+        !     end do
+        ! end do
+        
+        do it = 1,nt
+            do ip = 1,np
+                res_ov(it,ip,:,:) = res_ov(it,ip,:,:)*e1(:,:)  !Multiply by cell width to calculate volume flux
+            end do
+        end do
+
+    end subroutine residual_overturning
+
+
+    ! VVVVV z2rhop subroutine is currently not used VVVVV !
 
     subroutine z2rhop( array, rhop_array, mask, rhop_coord, boundary_mode, output_array, output_mask )
         !Transforma z-coordinate array into density coordinates using linear interpolation
@@ -202,193 +403,5 @@ module fortran_lib
         end do
     end subroutine z2rhop
 
-    subroutine residual_overturning(v_array, rhop_array, rhop_coord, e3, e1, vmask, res_ov, rhop_depth, output_mask )
-        !
-        real, intent(in) :: v_array(:,:,:,:) ! Array of meridional velocities (t,z,y,x)
-        !
-        real, intent(in) :: rhop_array(SIZE(v_array,1),SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4))
-        !
-        real, intent(in) :: rhop_coord(:)    !Density coordinates to interpolate to (rho)
-        !
-        real, intent(in) :: e3(SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4)) ! Cell thicknesses for meridional velocities (z,y,x)
-        !
-        real, intent(in) :: e1(SIZE(v_array,3),SIZE(v_array,4)) ! Zonal cell widths for meridional velocities (y,x)
-        !
-        logical, intent(in) :: vmask(SIZE(v_array,2),SIZE(v_array,3),SIZE(v_array,4)) ! Mask for v points (True = Masked)
-        !
-        real, intent(out) :: res_ov(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Residual overturning stream function (t,rho,y,x)
-        !
-        real, intent(out) :: rhop_depth(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Depth of isopycnals
-        !
-        logical, intent(out) :: output_mask(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Mask for both output arrays (True = Masked)
-        !
-        integer :: ii, ij, ik, ip, it, ni, nj, nk, nt, np, nk_avail, ip_min, kind
-        real :: v_single, e3_single, rhop_single, irhop, drhop, rhop_close
-        real :: v_column(SIZE(v_array,2))
-        logical :: vmask_column(SIZE(v_array,2))
-        real :: rhop_column(SIZE(v_array,2))
-        real :: e3_column(SIZE(v_array,2))
-        real :: rhop_bounds(SIZE(v_array,2)+1)
-        real :: v_zint(SIZE(v_array,1),SIZE(v_array,3),SIZE(v_array,4))
-
-
-        ni = SIZE(v_array,4)
-        nj = SIZE(v_array,3)
-        nk = SIZE(v_array,2)
-        nt = SIZE(v_array,1)
-        np = SIZE(rhop_coord,1)
-
-        output_mask (:,:,:,:) = .false.
-        rhop_depth(:,:,:,:) = 0.
-        res_ov(:,:,:,:) = 0.
-
-        do ii = 1,ni
-            do ij = 1,nj
-                !
-                !Look at the geometry of the column and determine if there are more than one data points
-                vmask_column = vmask(:,ij,ii)
-
-                !Count the number of unmasked points
-                nk_avail = COUNT(.NOT.vmask_column)
-
-                select case(nk_avail)
-                    !
-                    case(0) !Land column - No unmasked points
-                        output_mask(:,:,ij,ii) = .true.
-                        res_ov(:,:,ij,ii) = 0.
-                        rhop_depth(:,:,ij,ii) = 0.
-                    !
-                    case(1) !Single point column - One unmasked point
-                        output_mask(:,:,ij,ii) = .true.
-                        res_ov(:,:,ij,ii) = 0.
-                        rhop_depth(:,:,ij,ii) = 0.
-                        !
-                        !Find the location of the single unmasked point
-                        do ik = 1,nk
-                            if (.NOT.vmask_column(ik)) then
-                                kind = ik
-                                exit
-                            end if
-                        end do
-                        !
-                        e3_single = e3(kind, ij, ii)
-                        !
-                        do it = 1,nt
-                            v_single = v_array(it,kind,ij,ii)
-                            rhop_single = rhop_array(it,kind,ij,ii)
-                            !
-                            ip_min = MINLOC( ABS(rhop_coord - rhop_single), 1 ) !Find the closest isopycnal coordinate
-                            rhop_close = rhop_coord(ip_min)
-                            !
-                            output_mask(it,ip_min,ij,ii) = .false.
-                            res_ov(it,ip_min,ij,ii) = v_single
-                            rhop_depth(it,ip_min,ij,ii) = e3_single / 2
-                        end do
-                    
-                    case default !More than one unmasked point in the column
-                        !
-                        e3_column = e3(:,ij,ii)
-                        !
-                        do it = 1,nt
-                            v_column = v_array(it,:,ij,ii)
-                            rhop_column = rhop_array(it,:,ij,ii)
-                            !
-                            !Estimate the values of density between the v points
-                            rhop_bounds(:) = 0.
-                            !
-                            !Extrapolate at the top to find the surface density
-                            drhop = (rhop_column(2)-rhop_column(1))*e3_column(1)/(e3_column(2)+e3_column(1))
-                            rhop_bounds(1) = rhop_column(1) - drhop
-                            !
-                            !Extrapolate at the bottom to find the bottom density
-                            drhop = (rhop_column(nk_avail)-rhop_column(nk_avail-1))                                   &
-                                    *e3_column(nk_avail)/(e3_column(nk_avail)+e3_column(nk_avail-1))
-                            rhop_bounds(nk_avail+1) = rhop_column(nk_avail) + drhop
-                            !
-                            do ik = 2,nk_avail
-                                !
-                                drhop = (rhop_column(ik)-rhop_column(ik-1))                                           &
-                                    * e3_column(ik-1)/(e3_column(ik-1)+e3_column(ik))
-                                rhop_bounds(ik) = rhop_column(ik-1) + drhop
-                                !
-                            end do
-                            !
-                            do ip = 1,np
-                                !
-                                irhop = rhop_coord(ip)
-
-                                if( (ii == 13).AND.(ij==23).AND.(it==1).AND.(ip==23) ) then
-                                    print *, "irhop >>>>>"
-                                    print *, irhop
-                                    
-                                    print *, "rhop_column >>>>"
-                                    print *, rhop_column
-
-                                    print *, "v_column >>>>"
-                                    print *, v_column
-
-                                    print *, "vmask_column >>>>"
-                                    print *, vmask_column
-                                    
-                                    print *, "rhop_bounds >>>>"
-                                    print *, rhop_bounds
-
-                            
-
-                                end if
-
-                                if ((irhop < rhop_bounds(1)).OR.(irhop > rhop_bounds(nk_avail+1))) then
-                                    output_mask(it,ip,ij,ii) = .true.
-                                    res_ov(it,ip,ij,ii) = 0.
-                                    rhop_depth(it,ip,ij,ii) = 0.
-                                
-                                else
-                                    !
-                                    do ik = 1,nk_avail
-                                        !
-                                        if ( ( irhop >= rhop_bounds(ik) ).AND.(irhop < rhop_bounds(ik+1)) ) then
-                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii)                          &
-                                            + v_column(ik)*e3_column(ik)*(irhop - rhop_bounds(ik))             &
-                                            /(rhop_bounds(ik+1)-rhop_bounds(ik))
-
-                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii)                  &
-                                            + e3_column(ik) * (irhop - rhop_bounds(ik))                        &
-                                            /(rhop_bounds(ik+1)-rhop_bounds(ik))
-                                            exit
-                                        else
-                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii) + v_column(ik)*e3_column(ik)
-                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii) + e3_column(ik)
-                                        end if
-                                        !
-                                    end do
-                                    !
-                                end if
-
-
-                                !
-                            end do
-                            !
-                        end do
-
-                end select
-
-            end do
-        end do
-
-        !Convert to an integral from the bottom rather than the top by subtracting the full depth integral of v
-        do it = 1,nt
-            do ik = 1,nk
-                v_zint(it,:,:) = v_zint(it,:,:) + v_array(it,ik,:,:) * e3(ik,:,:)
-            end do
-        end do
-        
-        do it = 1,nt
-            do ip = 1,np
-                res_ov(it,ip,:,:) = res_ov(it,ip,:,:) - v_zint(it,:,:)
-                res_ov(it,ip,:,:) = res_ov(it,ip,:,:)*e1(:,:)  !Multiply by cell width to calculate volume flux
-            end do
-        end do
-
-    end subroutine residual_overturning
-
 end module fortran_lib
+

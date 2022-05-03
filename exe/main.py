@@ -6,8 +6,9 @@
 #
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, rel_vort_log,
-                z_rhop_log, nn_rhop, tvar_window, eke_log, epe_log):
+def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xint_interp_log,
+                nn_rhop, tvar_window, eke_log, tracer_xint_log, 
+                xmin_list, xmax_list, range_labels):
     """
     Run da code. Waaah
     """
@@ -21,14 +22,13 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, rel_v
     import cubeprep
     import eddy_energy
     import streamfunction
+    import tracers
     
     out_dir = data_dir + '/OUTPUT.' + out_label + '/'
     if not os.path.exists(out_dir): os.mkdir(out_dir)
 
     data_list = iris.load(data_dir + "/*grid*.nc")
     mask_list = iris.load(data_dir + "/mesh_mask.nc")
-
-    print(mask_list)
 
     print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     print("run_analysis")
@@ -43,27 +43,26 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, rel_v
 
     if sf_xint_log == True:
         print("")
-        print("Overturning stream function and transport calculation")
+        print("Residual overturning stream function and transport calculation")
 
-
-    # if rel_vort_log == True: 
-    #     print("")
-    #     print("Relative vorticity")
-
-    if z_rhop_log == True: 
+    if sf_xint_interp_log == True:
         print("")
-        print("Interpolated depth of the isopycnals")
-        print("Maximum number of isopycnal levels =", nn_rhop)
+        print("Interpolate overturning stream function onto depth space")
+
+        if sf_xint_log == False: print("Will load res_ov.nc file")
 
     if eke_log == True: 
         print("")
         print("Eddy kinetic energy")
         print("Rolling window length = ", tvar_window, " days")
 
-    if epe_log == True: 
+    if tracer_xint_log == True: 
         print("")
-        print("Eddy potential energy")
-        print("Rolling window length = ", tvar_window, " days")
+        print("Zonal integrals of tracers")
+        for i in range(len(xmin_list)):
+            print(" Range: ", range_labels[i] )
+            print(" xmin = ", str(xmin_list[i]))
+            print(" xmax = ", str(xmax_list[i]))
 
     #Load the dictionary of variable names for this data
     varname_dict = cubeprep.var_names()
@@ -81,26 +80,24 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, rel_v
     if sf_xint_log == True:
         print("")
         print("Calculating stream function of the x-integrated flow (Overturning) >>>")
-        # sf_xint_cube = streamfunction.ZonIntSF(data_list, mask_list, varname_dict)
-
-        # iris.save(sf_xint_cube, out_dir + '/sf_xint.nc')
         res_ov_cube = streamfunction.ResidualOverturning(data_list, mask_list, nn_rhop, varname_dict)
-        print(res_ov_cube)
-        # print(v_rhop_cube)
         iris.save(res_ov_cube, out_dir + '/res_ov.nc')
-        # iris.save(v_rhop_cube, out_dir + '/v_rhop.nc')
 
-
-
-
-    # Eddy energy calculations
-    if z_rhop_log == True:
+    if sf_xint_interp_log == True:
         print("")
-        print("Calculating depth of isopycnals>>>")
-        z_rhop_cube = eddy_energy.z_rhop(data_list, mask_list, nn_rhop, varname_dict)  
+        print("Interpolating the residual overturning stream function onto depth space")
+        if sf_xint_log != True:
+            try:
+                res_ov_cube = iris.load( out_dir + '/res_ov.nc')[0]   
+            except:
+                print("sf_xint_log == False and cannot load res_ov_cube")
+                print("Skipping interpolation of residual overturning stream function !")
 
-        iris.save(z_rhop_cube, out_dir + "/z_rhop2.nc")
-        print("Complete -------------------------")
+        try:
+            res_ov_depth_cube = streamfunction.ResOv2depth(res_ov_cube, data_list, mask_list, varname_dict)
+            iris.save(res_ov_depth_cube, out_dir + '/res_ov_depth.nc')
+        except: 
+            print("Failed to convert to depth coordinates")
 
 
     if eke_log == True:
@@ -112,17 +109,17 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, rel_v
         iris.save(eke_zint_cube, out_dir + "/eke_zint." + str(tvar_window) +".nc")
         print("Complete -------------------------")
 
-    if epe_log == True:
+    #Calculate the zonal mean of tracers over specified ranges
+    if tracer_xint_log == True:
         print("")
-        print("Calculating the Eddy Kinetic Energy >>>")
+        print("Calculating the zonal mean of tracers over specified ranges")
 
-        if z_rhop_log == False: z_rhop_cube = iris.load(out_dir + "/z_rhop.nc")[0]
+        temp_xint_cube_list, sal_xint_cube_list, rhop_xint_cube_list = tracers.tracer_xint(data_list, mask_list, varname_dict, xmin_list, xmax_list, range_labels)
 
-        epe_cube, epe_rhoint_cube = eddy_energy.eddy_potential_energy(z_rhop_cube, data_list, mask_list, tvar_window, varname_dict)
+        print(temp_xint_cube_list)
 
-        iris.save(epe_cube, out_dir + "/epe." + str(tvar_window) +".nc")
-        iris.save(epe_rhoint_cube, out_dir + "/epe_rhoint." + str(tvar_window) +".nc")
-        print("Complete -------------------------")
-
+        iris.save(temp_xint_cube_list, out_dir + "/temp_xint.nc")
+        iris.save(sal_xint_cube_list, out_dir + "/sal_xint.nc")
+        iris.save(rhop_xint_cube_list, out_dir + "/rhop_xint.nc")
 
     return
