@@ -21,13 +21,15 @@ Contains methods:
 """
 
 from cubeprep import CubeListExtract as CLE
-import iris
-import iris.coord_categorisation as cat
-from iris.cube import Cube
+# import iris
+# import iris.coord_categorisation as cat
+# from iris.cube import Cube
+import dask
+import dask.array as da
+import xarray as xr
 import sys
 import numpy as np
-from iris.coords import DimCoord, AuxCoord
-from scipy.interpolate import interp1d
+# from scipy.interpolate import interp1d
 from fortran_lib import fortran_lib
 
 
@@ -64,128 +66,70 @@ def eddy_kinetic_energy(data_list, mask_list, tvar_window, var_dict):
     import sys
     import numpy as np
 
-    u_cube = CLE(data_list, var_dict['u'])
-    v_cube = CLE(data_list, var_dict['v'])
-    w_cube = CLE(data_list, var_dict['w'])
-    rhop_cube = CLE(data_list, var_dict['rho'])
+    u_cube = data_list[var_dict['u']]
+    v_cube = data_list[var_dict['v']]
+    w_cube = data_list[var_dict['w']]
+    rhop_cube = data_list[var_dict['rho']]
 
-    umask = iris.util.squeeze(CLE(mask_list, var_dict['umask'])).data
-    vmask = iris.util.squeeze(CLE(mask_list, var_dict['vmask'])).data
-    tmask = iris.util.squeeze(CLE(mask_list, var_dict['tmask'])).data
+    umask = da.squeeze(mask_list[var_dict['umask']]).data.astype(bool)
+    vmask = da.squeeze(mask_list[var_dict['vmask']]).data.astype(bool)
+    tmask = da.squeeze(mask_list[var_dict['tmask']]).data.astype(bool)
 
-    e1u = iris.util.squeeze(CLE(mask_list, var_dict['e1u'])).data
-    e2u = iris.util.squeeze(CLE(mask_list, var_dict['e2u'])).data
-    e3u = iris.util.squeeze(CLE(mask_list, var_dict['e3u'])).data
+    e1u = da.squeeze(mask_list[var_dict['e1u']]).data
+    e2u = da.squeeze(mask_list[var_dict['e2u']]).data
+    e3u = da.squeeze(mask_list[var_dict['e3u']]).data
 
-    e1v = iris.util.squeeze(CLE(mask_list, var_dict['e1u'])).data
-    e2v = iris.util.squeeze(CLE(mask_list, var_dict['e2v'])).data
-    e3v = iris.util.squeeze(CLE(mask_list, var_dict['e3v'])).data
+    e1v = da.squeeze(mask_list[var_dict['e1v']]).data
+    e2v = da.squeeze(mask_list[var_dict['e2v']]).data
+    e3v = da.squeeze(mask_list[var_dict['e3v']]).data
 
-    e1t = iris.util.squeeze(CLE(mask_list, var_dict['e1t'])).data
-    e2t = iris.util.squeeze(CLE(mask_list, var_dict['e2t'])).data
-    e3t = iris.util.squeeze(CLE(mask_list, var_dict['e3t'])).data
+    e1t = da.squeeze(mask_list[var_dict['e1t']]).data
+    e2t = da.squeeze(mask_list[var_dict['e2t']]).data
+    e3t = da.squeeze(mask_list[var_dict['e3t']]).data
 
-    e3w = iris.util.squeeze(CLE(mask_list, var_dict['e3w'])).data
-
-    aux_time = u_cube.aux_coords[0]
-    aux_time.rename('aux_time')
-
-    aux_time = v_cube.aux_coords[0]
-    aux_time.rename('aux_time')
-
-    aux_time = w_cube.aux_coords[0]
-    aux_time.rename('aux_time')
-
+    e3w = da.squeeze(mask_list[var_dict['e3w']]).data
 
 
     #Calculate the variances over a specified time window
-    if tvar_window == None:
-        #Calculate variance over all time
-        uvar_cube = u_cube.collapsed('time', iris.analysis.VARIANCE)
-        vvar_cube = v_cube.collapsed('time', iris.analysis.VARIANCE)
-        wvar_cube = w_cube.collapsed('time', iris.analysis.VARIANCE)
-
-        uvar_cube = iris.util.as_compatible_shape(uvar_cube, u_cube)
-        vvar_cube = iris.util.as_compatible_shape(vvar_cube, v_cube)
-        wvar_cube = iris.util.as_compatible_shape(wvar_cube, w_cube)
-
-
-    elif isinstance(tvar_window,str): #Aggregate by month, season, or year
-        if tvar_window.lower() == 'month':
-            #
-            cat.add_month(u_cube, "time", name="month")
-            cat.add_month(v_cube, "time", name="month")
-            cat.add_month(w_cube, "time", name="month")
-            #
-            uvar_cube = u_cube.aggregated_by(["month"], iris.analysis.VARIANCE)
-            vvar_cube = v_cube.aggregated_by(["month"], iris.analysis.VARIANCE)
-            wvar_cube = w_cube.aggregated_by(["month"], iris.analysis.VARIANCE)
-            #
-        elif tvar_window.lower() == 'season':
-            #
-            cat.add_season(u_cube, "time", name="season")
-            cat.add_season(v_cube, "time", name="season")
-            cat.add_season(w_cube, "time", name="season")
-            #
-            uvar_cube = u_cube.aggregated_by(["season"], iris.analysis.VARIANCE)
-            vvar_cube = v_cube.aggregated_by(["season"], iris.analysis.VARIANCE)
-            wvar_cube = w_cube.aggregated_by(["season"], iris.analysis.VARIANCE)
-
-        elif tvar_window.lower() == 'year':
-            #
-            cat.add_year(u_cube, "time", name="year")
-            cat.add_year(v_cube, "time", name="year")
-            cat.add_year(w_cube, "time", name="year")
-            #
-            uvar_cube = u_cube.aggregated_by(["year"], iris.analysis.VARIANCE)
-            vvar_cube = v_cube.aggregated_by(["year"], iris.analysis.VARIANCE)
-            wvar_cube = w_cube.aggregated_by(["year"], iris.analysis.VARIANCE)
-
-
-    elif isinstance(tvar_window, int): #Rolling window of n time steps. n=tvar_window
-        #
-        uvar_cube = u_cube.rolling_window('time', iris.analysis.VARIANCE, tvar_window)
-        vvar_cube = v_cube.rolling_window('time', iris.analysis.VARIANCE, tvar_window)
-        wvar_cube = w_cube.rolling_window('time', iris.analysis.VARIANCE, tvar_window)
+    uvar_cube = u_cube.var(dim="time_counter")
+    vvar_cube = v_cube.var(dim="time_counter")
+    wvar_cube = w_cube.var(dim="time_counter")
 
     #The variances of u,v, and w must be centred on the same T point
+
     eke = 0.5*tmask*( ( im1(uvar_cube.data*e1u*e2u*e3u*umask)  + (uvar_cube.data*e1u*e2u*e3u*umask) )
-          + ( jm1(vvar_cube.data*e1v*e2v*e3v*vmask)  + (vvar_cube.data*e1v*e2v*e3v*vmask) )
-          + ( km1(wvar_cube.data*e1t*e2t*e3w*tmask)  + (wvar_cube.data*e1t*e2t*e3w*tmask) ) ) / (2*e1t*e2t*e3t)
+        + ( jm1(vvar_cube.data*e1v*e2v*e3v*vmask)  + (vvar_cube.data*e1v*e2v*e3v*vmask) )
+        + ( km1(wvar_cube.data*e1t*e2t*e3w*tmask)  + (wvar_cube.data*e1t*e2t*e3w*tmask) ) ) / (2*e1t*e2t*e3t)
 
-    eke  = np.ma.masked_array(eke, mask=np.broadcast_to(~np.ma.make_mask(tmask),eke.shape))
 
-    #Save output array as an IRIS cube
-    time_coord = uvar_cube.coord("time")
-    eke_cube = Cube(eke, dim_coords_and_dims=[(time_coord,0)])
-    eke_cube.var_name = "eke_" + str(tvar_window)
-    eke_cube.long_name = "eddy kinetic energy"
-    eke_cube.units = "m2 s-2"
-    eke_cube.attributes = {'tvar_window':str(tvar_window)}
+    eke  = da.ma.masked_array(eke, mask=da.broadcast_to(~tmask, eke.shape))
+    eke_zint = (eke * e3t).sum(axis=-3) 
 
-    eke_zint_cube = Cube(np.sum(eke*e3t,axis=-3), dim_coords_and_dims=[(time_coord,0)])
-    eke_zint_cube.var_name = "eke_zint_" + str(tvar_window)
-    eke_zint_cube.long_name = "eddy kinetic energy (zint)"
-    eke_zint_cube.units = "m3 s-2"
-    eke_zint_cube.attributes = {'tvar_window':str(tvar_window)}
+    eke_cube = xr.DataArray(eke.compute(), 
+                            dims=["model_level", "y", "x"],
+                            name="eke",
+                            attrs={'long_name': "eddy kinetic energy",
+                                   'units' : 'm2 s-2'} )
+
+
+    eke_zint_cube = xr.DataArray(eke_zint.compute(),
+                            dims=["y", "x"],
+                            name="eke_zint",
+                            attrs={'long_name': "eddy kinetic energy (zint)",
+                                   'units' : 'm3 s-2'} )
 
     return eke_cube, eke_zint_cube
 
 def im1(M): 
-    import numpy as np
-    output = np.roll(M, 1, axis=-1)
+    output = da.roll(M, 1, axis=-1)
     return output
 
 def jm1(M): 
-    import numpy as np
-    output = np.roll(M, 1, axis=-2)
-    output[...,0,:] = 0.
+    output = da.roll(M, 1, axis=-2)
     return output
 
 def km1(M): 
-    import numpy as np
-    output = np.roll(M, 1, axis=-3)
-    output[...,0,:,:] = 0.
+    output = da.roll(M, 1, axis=-3)
     return output
 
 # VVVV Currently unused functions listed below VVVVV

@@ -37,7 +37,7 @@ module fortran_lib
         real :: e3_column(SIZE(v_array,2))
         real :: rhop_bounds(SIZE(v_array,2)+1)
         real :: v_zint(SIZE(v_array,1),SIZE(v_array,3),SIZE(v_array,4))
-
+        logical :: first_bath_rho_log,ext_rho_log
 
         ni = SIZE(v_array,4)
         nj = SIZE(v_array,3)
@@ -125,31 +125,29 @@ module fortran_lib
                             do ip = 1,np
                                 !
                                 irhop = rhop_coord(ip)
-
-                                if( (ii == 13).AND.(ij==23).AND.(it==1).AND.(ip==23) ) then
-                                    print *, "irhop >>>>>"
-                                    print *, irhop
-                                    
-                                    print *, "rhop_column >>>>"
-                                    print *, rhop_column
-
-                                    print *, "v_column >>>>"
-                                    print *, v_column
-
-                                    print *, "vmask_column >>>>"
-                                    print *, vmask_column
-                                    
-                                    print *, "rhop_bounds >>>>"
-                                    print *, rhop_bounds
-
-                            
-
+                                !
+                                !Determine if isopycnal lies outside the domain
+                                ext_rho_log = ( (irhop < rhop_bounds(1)).OR.(irhop > rhop_bounds(nk_avail+1)))
+                                
+                                !Determine if isopycnal is the first one that lies in the bathymetry
+                                !Extrapolation needed in this case
+                                if (ip /= 1) then
+                                   first_bath_rho_log = ((rhop_coord(ip-1) >= rhop_bounds(1))   &
+                                                        .AND.(rhop_coord(ip-1) <= rhop_bounds(nk_avail+1)))
+                                   first_bath_rho_log = (first_bath_rho_log.AND.(irhop > rhop_bounds(nk_avail+1)))
+                                else
+                                   first_bath_rho_log = .false.
                                 end if
-
-                                if ((irhop < rhop_bounds(1)).OR.(irhop > rhop_bounds(nk_avail+1))) then
+                               
+                                if (ext_rho_log.AND.(.NOT.first_bath_rho_log) ) then
                                     output_mask(it,ip,ij,ii) = .true.
                                     res_ov(it,ip,ij,ii) = 0.
                                     rhop_depth(it,ip,ij,ii) = 0.
+
+                                !if ((irhop < rhop_bounds(1)).OR.(irhop > rhop_bounds(nk_avail+1))) then
+                                !    output_mask(it,ip,ij,ii) = .true.
+                                !    res_ov(it,ip,ij,ii) = 0.
+                                !    rhop_depth(it,ip,ij,ii) = 0.
                                 
                                 else
                                     !
@@ -312,15 +310,6 @@ module fortran_lib
                         !All other density levels are masked 
                         output_mask(it,:,ij, ii) = .true.
                         output_mask(it, pmin, ij, ii) = .false.
-
-                        if( (ii == 30).AND.(ij==3).AND.(it==21)) THEN
-                            print *, "single_rhop = ", single_rhop
-                            print *, "single_point = ", single_point
-                            print *, "output_array = ", output_array(it,:,ij,ii)
-                            print *, "output_mask = ", output_mask(it,:,ij,ii)
-                            print *, "pmin = ", pmin
-                            print *, "nk_avail =", nk_avail
-                        end if
                     
                     else
 

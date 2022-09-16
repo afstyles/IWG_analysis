@@ -26,6 +26,19 @@ def CubeListExtract(cube_list, var_name):
     cube - IRIS cube with variable name matching var_name
     """
     
+    # try: 
+
+    #     cube = cube_list[var_name]
+
+    #     return cube
+    
+    # except:
+
+    #     print("Variable name not found", var_name)
+
+    #     return
+
+
     VarNames = [cube_list[i].var_name for i in range(len(cube_list))]
     
     try:
@@ -72,6 +85,8 @@ def var_names():
                  'tmask2d': 'tmaskutil', # T cell mask (2d fields)
                  'x': 'nav_lon',       # X coordinates of T cell (km)
                  'y': 'nav_lat',       # Y coordinates of T cell (km)
+                 'ff_f': 'ff_f',          # Coriolis parameter centred on F point (1/s)
+                 'ff_t': 'ff_t',          # Coriolis parameter centred on T point (1/s)
                 }
 
     return varname_dict
