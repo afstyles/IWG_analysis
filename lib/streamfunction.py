@@ -33,7 +33,7 @@ import numpy as np
 from fortran_lib import fortran_lib
 import warnings
 from scipy.interpolate import griddata
-
+from SOR import sor
 
 def DepIntSf(data_list, mask_list, var_dict, WG_bounds=None ):
     """
@@ -272,46 +272,58 @@ def acc_decomp(data_list, mask_list, var_dict, g=9.8, rhop_0=1027., rhop_ref=102
     OUTPUT variables
 
     """
-    u_cube = data_list[var_dict['u']]
-    rhop_cube = data_list[var_dict['rho']]
-    ssh_cube = data_list[var_dict['ssh']]
+    u_cube = data_list[var_dict['u']][...,1:-1]
+    v_cube = data_list[var_dict['v']][...,1:-1]
+    rhop_cube = data_list[var_dict['rho']][...,1:-1]
+    ssh_cube = data_list[var_dict['ssh']][...,1:-1]
 
-    tmask = da.squeeze(mask_list[var_dict['tmask']].data).astype(bool)
-    tmask2d = da.squeeze(mask_list[var_dict['tmask2d']].data).astype(bool)
-    umask = da.squeeze(mask_list[var_dict['umask']].data).astype(bool)
-    umask2d = da.squeeze(mask_list[var_dict['umask2d']].data).astype(bool)
-    vmask = da.squeeze(mask_list[var_dict['vmask']].data).astype(bool)
-    vmask2d = da.squeeze(mask_list[var_dict['vmask2d']].data).astype(bool)
+    tmask = da.squeeze(mask_list[var_dict['tmask']].data).astype(bool)[...,1:-1]
+    tmask2d = da.squeeze(mask_list[var_dict['tmask2d']].data).astype(bool)[...,1:-1]
+    umask = da.squeeze(mask_list[var_dict['umask']].data).astype(bool)[...,1:-1]
+    umask2d = da.squeeze(mask_list[var_dict['umask2d']].data).astype(bool)[...,1:-1]
+    vmask = da.squeeze(mask_list[var_dict['vmask']].data).astype(bool)[...,1:-1]
+    vmask2d = da.squeeze(mask_list[var_dict['vmask2d']].data).astype(bool)[...,1:-1]
 
-    e1u = da.squeeze(mask_list[var_dict['e1u']].data)
-    e2u = da.squeeze(mask_list[var_dict['e2u']].data)
-    e3u = da.squeeze(mask_list[var_dict['e3u']].data)
-    e1v = da.squeeze(mask_list[var_dict['e1v']].data)
-    e2v = da.squeeze(mask_list[var_dict['e2v']].data)
-    e3v = da.squeeze(mask_list[var_dict['e3v']].data)
-    e1t = da.squeeze(mask_list[var_dict['e1t']].data)
-    e2t = da.squeeze(mask_list[var_dict['e2t']].data)
-    e3t = da.squeeze(mask_list[var_dict['e3t']].data)
-    e1f = da.squeeze(mask_list[var_dict['e1f']].data)
-    e2f = da.squeeze(mask_list[var_dict['e2f']].data)
-    e3w = da.squeeze(mask_list[var_dict['e3w']].data)
-    gdept_array = da.squeeze(mask_list[var_dict['deptht']].data)
-    ff_t = da.squeeze(mask_list[var_dict['ff_t']].data)
+    e1u = da.squeeze(mask_list[var_dict['e1u']].data)[...,1:-1]
+    e2u = da.squeeze(mask_list[var_dict['e2u']].data)[...,1:-1]
+    e3u = da.squeeze(mask_list[var_dict['e3u']].data)[...,1:-1]
+    e1v = da.squeeze(mask_list[var_dict['e1v']].data)[...,1:-1]
+    e2v = da.squeeze(mask_list[var_dict['e2v']].data)[...,1:-1]
+    e3v = da.squeeze(mask_list[var_dict['e3v']].data)[...,1:-1]
+    e1t = da.squeeze(mask_list[var_dict['e1t']].data)[...,1:-1]
+    e2t = da.squeeze(mask_list[var_dict['e2t']].data)[...,1:-1]
+    e3t = da.squeeze(mask_list[var_dict['e3t']].data)[...,1:-1]
+    e1f = da.squeeze(mask_list[var_dict['e1f']].data)[...,1:-1]
+    e2f = da.squeeze(mask_list[var_dict['e2f']].data)[...,1:-1]
+    e3w = da.squeeze(mask_list[var_dict['e3w']].data)[...,1:-1]
+    gdept_array = da.squeeze(mask_list[var_dict['deptht']].data)[...,1:-1]
+    ff_t = da.squeeze(mask_list[var_dict['ff_t']].data)[...,1:-1]
 
     depth_array = da.sum(e3t * tmask, axis=-3)
     beta = 2 * (2*np.pi/T) * np.cos( np.pi * lat0 / 180 ) / R
 
     #Calculate ACC contributions from top and bottom flow
 
-    u_top, u_bot = first_last_index(u_cube.data, umask, axis=-3)
-    
-    acc_ssh = da.sum(u_top * ssh_cube.data * e2u, axis=-2)/1e6
-    acc_bot = da.sum(u_bot * depth_array * e2u, axis=-2)/1e6
+    utop, ubot = first_last_index(u_cube.data, umask, axis=-3)
+    vtop, vbot = first_last_index(v_cube.data, vmask, axis=-3)
+
+    utop_zint = utop * ssh_cube.data 
+    vtop_zint = vtop * ssh_cube.data
+    ubot_zint = ubot * depth_array
+    vbot_zint = vbot * depth_array
+
+    integrand_top= -utop_zint * e2u
+    integrand_bot = -ubot_zint * e2u
+
+    acc_top = da.sum(-integrand_top, axis=-2)/1e6
+    acc_bot = da.sum(-integrand_bot, axis=-2)/1e6
 
     #Calculate the transport due to thermal wind 
-    #Densities centred on v points
+    #Load densities centred on T points
     rhop_array = tmask * rhop_cube.data
 
+
+    #Calculate vertical density gradient in order to calculate the correction
     drhop_dk = rhop_cube.data - da.roll(rhop_array, 1, axis=-3) # = rho[i,j,k] - rho[i,j,k-1]
     drhop_dk_mask = da.roll(tmask,1,axis=-3)*tmask # No extrapolation should be needed
     roll_mask = np.ones(drhop_dk_mask.shape, dtype=bool)
@@ -324,47 +336,124 @@ def acc_decomp(data_list, mask_list, var_dict, g=9.8, rhop_0=1027., rhop_ref=102
 
     #For densities near partial cells, interpolate the densities such that gradients are purely horizontal
 
-    #Case 1 - jth cell is lower than the partial cell neighbour at j-1
-    alpha = da.roll(tmask,1,axis=-2) * tmask * e3w / da.roll(e3w, 1, axis=-2)
+    # Case 1 - jth cell is lower than the partial cell neighbour at j-1
+    alpha = e3w / da.roll(e3w, 1, axis=-2)
     roll_mask = np.ones(alpha.shape, dtype=bool)
     roll_mask[:,0,:] = False
     roll_mask = da.from_array(roll_mask)
-    alpha = alpha * roll_mask
+    alpha = da.ma.masked_where(  ~(tmask * da.roll(tmask,1,axis=-2)*roll_mask), alpha )
+    alpha = da.ma.masked_less_equal( alpha, 1 )
+    alpha = da.ma.masked_invalid(alpha)
 
-    tmp_mask = alpha > 1
-    correction = tmp_mask * (1 - 1/alpha)*drhop_dk
+    correction = (1 - 1/alpha)*drhop_dk
+    correction = da.ma.filled(correction, fill_value=0)
+    rhop_corrected_dy = rhop_array - correction
 
-
-    #Case 2 - jth cell is lower than the partial cell neighbour at j+1
-    alpha = da.roll(tmask,-1,axis=-2) * tmask * e3w / da.roll(e3w, -1, axis=-2)
+    # Case 2 - jth cell is lower than the partial cell neighbour at j+1
+    alpha =  e3w / da.roll(e3w, -1, axis=-2)
     roll_mask = np.ones(alpha.shape, dtype=bool)
     roll_mask[:,-1,:] = False
     roll_mask = da.from_array(roll_mask)
-    alpha = alpha * roll_mask
 
-    tmp_mask = alpha > 1
-    correction = correction  + tmp_mask * (1 - 1/alpha)*drhop_dk
+    alpha = da.ma.masked_where(  ~(tmask * da.roll(tmask,-1,axis=-2)*roll_mask), alpha )
+    alpha = da.ma.masked_less_equal( alpha, 1 )
+    alpha = da.ma.masked_invalid(alpha)
 
-    print(correction)
+    correction = (1 - 1/alpha)*drhop_dk
+    correction = da.ma.filled(correction, fill_value=0)
+    rhop_corrected_dy = rhop_corrected_dy - correction
 
-    #Calculate horizontal gradients of the denisty
-    rhop_corrected = rhop_array - correction
-    drhop_dy = vmask * (da.roll(rhop_corrected, -1, axis=-2) - rhop_corrected)/e2v
+    # Case 3 - ith cell is lower than the partial cell neighbour at i-1
+    alpha = e3w / da.roll(e3w, 1, axis=-1)
+    alpha = da.ma.masked_where(  ~(tmask * da.roll(tmask,1,axis=-1)), alpha )
+    alpha = da.ma.masked_less_equal( alpha, 1 )
+    alpha = da.ma.masked_invalid(alpha)
 
-    #Calculate the depth's of v points
-    gdepv_array = vmask*(da.roll(gdept_array*e1t*e2t, -1, axis=-2) + gdept_array*e1t*e2t )/(2*e1v*e2v)
-    gdepv_array = gdepv_array + vmask * e3v / 2
+    correction = (1 - 1/alpha)*drhop_dk
+    correction = da.ma.filled(correction, fill_value=0)
+    rhop_corrected_dx = rhop_array - correction
 
-    #Calculate 1/f centred on V points
-    inv_ff_v = vmask * (2*e1v*e2v)/(da.roll(ff_t*e1t*e2t, -1, axis=-2) + ff_t*e1t*e2t )
-    ff_v = vmask * (da.roll(ff_t*e1t*e2t, -1, axis=-2) + ff_t*e1t*e2t )/(2*e1v*e2v)
+    # Case 4 - ith cell is lower than the partial cell neighbour at i+1
+    alpha =  e3w / da.roll(e3w, -1, axis=-1)
+    alpha = da.ma.masked_where(  ~(tmask * da.roll(tmask,-1,axis=-2)*roll_mask), alpha )
+    alpha = da.ma.masked_less_equal( alpha, 1 )
+    alpha = da.ma.masked_invalid(alpha)
 
-    #Combine to calculate the integrand in Sverdrups
-    integrand = vmask * g * drhop_dy * gdepv_array * inv_ff_v * e3v * e2v / (1e6 * rhop_0)
+    correction = (1 - 1/alpha)*drhop_dk
+    correction = da.ma.filled(correction, fill_value=0)
+    rhop_corrected_dx = rhop_corrected_dx - correction
+
+    #Calculate the horizontal gradients of density using the corrected density fields >>>>
+    drhop_dx = umask*(da.roll(rhop_corrected_dx, -1, axis=-1) - rhop_corrected_dx ) / e1u
+    drhop_dy = vmask*(da.roll(rhop_corrected_dy, -1, axis=-2) - rhop_corrected_dy ) / e2v
+
+    drhop_dx = da.ma.masked_invalid(drhop_dx)
+    drhop_dy = da.ma.masked_invalid(drhop_dy)
+
+    #Extrapolate density gradients that approach the sea floor (free slip condition)
+    east_bound_mask  = tmask * (~umask)
+    west_bound_mask  = (~tmask) * (~umask)
+
+    drhop_dx = drhop_dx + east_bound_mask * da.roll(drhop_dx, 1, axis=-1)
+    drhop_dx = drhop_dx + west_bound_mask * da.roll(drhop_dx,-1, axis=-1)
+
+    north_bound_mask = tmask * (~vmask)
+    south_bound_mask = (~tmask) * (~vmask)
+
+    drhop_dy = drhop_dy + north_bound_mask * da.roll(drhop_dy, 1, axis=-2)
+    drhop_dy = drhop_dy + south_bound_mask * da.roll(drhop_dy,-1,axis=-2)
+
+    roll_mask = np.ones(tmask2d.shape, dtype=bool)
+    roll_mask[-1,:] = False
+    roll_mask[0 ,:] = False
+    roll_mask = da.from_array(roll_mask)
+
+    drhop_dy = drhop_dy * roll_mask
+
+    # Center drhop_dx on V points and center drhop_dy on U points
+    roll_mask = np.ones(tmask2d.shape, dtype=bool)
+    roll_mask[-1,:] = False
+    roll_mask = da.from_array(roll_mask)
+
+    drhop_dx = vmask * roll_mask * (          drhop_dx*e1u*e2u 
+                                    + da.roll(drhop_dx*e1u*e2u,1 ,axis=-1)
+                                    + da.roll(drhop_dx*e1u*e2u,-1,axis=-2)
+                                    + da.roll(da.roll(drhop_dx*e1u*e2u,-1,axis=-2),1,axis=-1) )/(4*e1v*e2v)
+
+    roll_mask = np.ones(tmask2d.shape, dtype=bool)
+    roll_mask[0,:] = False
+    roll_mask = da.from_array(roll_mask)
+
+    drhop_dy = umask * roll_mask * (  drhop_dy*e1v*e2v
+                            + da.roll(drhop_dy*e1v*e2v,-1,axis=-1)
+                            + da.roll(drhop_dy*e1v*e2v,1 ,axis=-2)
+                            + da.roll(da.roll(drhop_dy*e1v*e2v,-1,axis=-1),1,axis=-2) )/(4*e1u*e2u)
+
+    #Calculate the depth of u and v points
+    gdepu_array = da.cumsum( e3u * umask, axis=-3 ) - umask*e3u/2
+    gdepv_array = da.cumsum( e3v * vmask, axis=-3) - vmask*e3v/2
+
+    #Calculate 1/f centred on V and U points
+    inv_ff_v = (2*e1v*e2v)/(da.roll(ff_t*e1t*e2t, -1, axis=-2) + ff_t*e1t*e2t )
+    ff_v = vmask*(da.roll(ff_t*e1t*e2t, -1, axis=-2) + ff_t*e1t*e2t )/(2*e1v*e2v)
+    
+    inv_ff_u = (2*e1v*e2v)/(da.roll(ff_t*e1t*e2t, -1, axis=-2) + ff_t*e1t*e2t )
+    ff_u = umask * (da.roll(ff_t*e1t*e2t, -1, axis=-2) + ff_t*e1t*e2t )/(2*e1v*e2v)
+
+
+    #Calculate the thermal wind (depth-integrated) velocity field
+    uthw_zint =   ( g*inv_ff_u/rhop_0 ) * da.sum( da.ma.masked_invalid(umask * drhop_dy * gdepu_array *  e3u) , axis=-3)
+    vthw_zint =  -( g*inv_ff_v/rhop_0 ) * da.sum( da.ma.masked_invalid(vmask * drhop_dx * gdepv_array *  e3v) , axis=-3)
+
+    uthw_zint = da.ma.masked_array(uthw_zint, mask=da.broadcast_to(~umask2d, uthw_zint.shape))
+    vthw_zint = da.ma.masked_array(vthw_zint, mask=da.broadcast_to(~vmask2d, vthw_zint.shape))
+
+    #Combine to calculate the integrand
+    integrand = uthw_zint * e2u
     integrand = da.ma.masked_invalid(integrand)
 
-    #Finally, integrate over depth and y
-    integral = da.sum(integrand, axis=(-3,-2))
+    #Finally, integrate over y for the ACC transport
+    acc_thw = da.sum(integrand, axis=-2)/1e6
 
     #We calculate the density at the Northern and Southern boundaries of the domain
     rhoS, rhoN = first_last_index( rhop_array, tmask, axis=-2 )
@@ -386,10 +475,47 @@ def acc_decomp(data_list, mask_list, var_dict, g=9.8, rhop_0=1027., rhop_ref=102
 
     time_coord = u_cube.coords["time_counter"]
 
-    acc_ssh_cube = xr.DataArray(acc_ssh.compute(),
+    utop_zint_cube = xr.DataArray( utop_zint.compute(),
+                                dims=["time_counter", "y", "x"],
+                                coords={"time_counter":time_coord.values},
+                                name='utop_zint',
+                                attrs={'units':'m2s-2'})
+
+    ubot_zint_cube = xr.DataArray( ubot_zint.compute(),
+                                dims=["time_counter", "y", "x"],
+                                coords={"time_counter":time_coord.values},
+                                name='ubot_zint',
+                                attrs={'units':'m2 s-2'})
+
+    uthw_zint_cube = xr.DataArray( uthw_zint.compute(),
+                                dims=["time_counter", "y", "x"],
+                                coords={"time_counter":time_coord.values},
+                                name='uthw_zint',
+                                attrs={'units':'m2 s-2'})
+
+    vtop_zint_cube = xr.DataArray( vtop_zint.compute(),
+                                dims=["time_counter", "y", "x"],
+                                coords={"time_counter":time_coord.values},
+                                name='vtop_zint',
+                                attrs={'units':'m2 s-2'})
+
+    vbot_zint_cube = xr.DataArray( vbot_zint.compute(),
+                                dims=["time_counter", "y", "x"],
+                                coords={"time_counter":time_coord.values},
+                                name='vbot_zint',
+                                attrs={'units':'m2 s-2'})
+    
+    vthw_zint_cube = xr.DataArray( vthw_zint.compute(),
+                                dims=["time_counter", "y", "x"],
+                                coords={"time_counter":time_coord.values},
+                                name='vthw_zint',
+                                attrs={'units':'m2 s-2'})
+
+    
+    acc_top_cube = xr.DataArray(acc_top.compute(),
                                 dims=["time_counter", "x"],
                                 coords={"time_counter":time_coord.values},
-                                name='acc_ssh',
+                                name='acc_top',
                                 attrs={'units':'Sv'})
 
     acc_bot_cube = xr.DataArray(acc_bot.compute(),
@@ -398,30 +524,10 @@ def acc_decomp(data_list, mask_list, var_dict, g=9.8, rhop_0=1027., rhop_ref=102
                                 name='acc_bot',
                                 attrs={'units':'Sv'})
 
-    print(integrand.shape)
-
-    integrand_cube = xr.DataArray(integrand.compute(),
-                                dims=["time_counter", "model_level", "y", "x"],
-                                coords={"time_counter":time_coord.values},
-                                name='integrand_thw',
-                                attrs={'units':'Sv'})
-
-    integrand_top_cube = xr.DataArray( (u_top * ssh_cube.data * e2u /1e6).compute(),
-                                dims=["time_counter", "y", "x"],
-                                coords={"time_counter":time_coord.values},
-                                name='integrand_top',
-                                attrs={'units':'Sv'})
-
-    integrand_bot_cube = xr.DataArray( (u_bot * depth_array * e2u /1e6).compute(),
-                                dims=["time_counter", "y", "x"],
-                                coords={"time_counter":time_coord.values},
-                                name='integrand_bot',
-                                attrs={'units':'Sv'})
-
-    thw_cube = xr.DataArray( integral.compute(),
+    acc_thw_cube = xr.DataArray( acc_thw.compute(),
                                 dims=["time_counter", "x"],
                                 coords={"time_counter":time_coord.values},
-                                name='thw',
+                                name='acc_thw',
                                 attrs={'units':'Sv'})    
 
     rhoS_cube = xr.DataArray( rhoS.compute(),
@@ -455,10 +561,11 @@ def acc_decomp(data_list, mask_list, var_dict, g=9.8, rhop_0=1027., rhop_ref=102
                                 name='intbnd_rhop',
                                 attrs={'units':rhop_cube.attrs['units']})    
 
-    return [acc_ssh_cube, acc_bot_cube, thw_cube, 
-            integrand_cube, integrand_top_cube,
-            integrand_bot_cube, rhoS_cube, rhoN_cube,
-            ff_tN_cube, ff_tS_cube, intbound_cube]
+    return [utop_zint_cube, ubot_zint_cube, uthw_zint_cube, 
+            vtop_zint_cube, vbot_zint_cube, vthw_zint_cube,
+            acc_top_cube  , acc_bot_cube  , acc_thw_cube  ,
+            rhoS_cube     , rhoN_cube     ,
+            ff_tN_cube    , ff_tS_cube    , intbound_cube ]      
 
 
 def first_last_index(array, mask, axis):
@@ -484,47 +591,199 @@ def first_last_index(array, mask, axis):
 
     return output_1, output_2
 
-# def first_last_index(array, mask, axis):
-#     array = da.swapaxes(array, axis, -1)
-#     mask = da.swapaxes(mask, axis, -1) #Put operating axis at end of the array
-#     n1, n2 = mask.shape[0], mask.shape[1]
-
-#     inds = np.indices([mask.shape[-1]])
-
-#     inds = np.broadcast_to(inds, mask.shape)
-#     inds = np.ma.masked_array(inds, mask=~np.ma.make_mask(mask))
-
-#     ind_1_array = np.min( inds, axis=-1)
-#     ind_2_array = np.max( inds, axis=-1)
-
-#     output_1 = np.expand_dims(np.zeros(list(array.shape[:-1])), axis=-1)
-#     output_2 = np.zeros(output_1.shape)
-
-#     for i1 in range(n1):
-#         for i2 in range(n2):
-#             ind_1 = ind_1_array[i1, i2]
-#             ind_2 = ind_2_array[i1, i2]
-
-#             if (np.ma.is_masked(ind_1)) or (np.ma.is_masked(ind_2)):
-#                 output_1[...,i1,i2,0] = np.nan
-#                 output_2[...,i1,i2,0] = np.nan
-#             else: 
-#                 output_1[...,i1, i2,0] = array[...,i1,i2,ind_1]
-#                 output_2[...,i1, i2,0] = array[...,i1,i2,ind_2]
-
-#     output_1 = np.ma.masked_invalid(output_1)
-#     output_2 = np.ma.masked_invalid(output_2)
-
-#     output_1 = np.swapaxes(output_1, axis, -1)
-#     output_2 = np.swapaxes(output_2, axis, -1)
-
-#     output_1 = np.squeeze(output_1, axis)
-#     output_2 = np.squeeze(output_2, axis)
-
-#     return output_1, output_2
 
 
+def WG_decomp( data_list, acc_decomp_cube_list, mask_list, var_dict):
+    """
+    Calculate the compressible component of the full, baroclinic, and barotropic flow.
+    Use this to calculate a corrected a stream function
+    """
+    from SOR import sor
 
+    #Load the time-averaged velocity fields
+    u_cube = data_list[var_dict['u']].mean("time_counter")[...,1:-1]
+    v_cube = data_list[var_dict['v']].mean("time_counter")[...,1:-1]
+
+    uthw_cube = acc_decomp_cube_list['uthw_zint'].mean("time_counter")
+    vthw_cube = acc_decomp_cube_list['vthw_zint'].mean("time_counter")
+
+    utop_cube = acc_decomp_cube_list['utop_zint'].mean("time_counter")
+    vtop_cube = acc_decomp_cube_list['vtop_zint'].mean("time_counter")
+
+    ubot_cube = acc_decomp_cube_list['ubot_zint'].mean("time_counter")
+    vbot_cube = acc_decomp_cube_list['vbot_zint'].mean("time_counter")
+
+    #Load the grid information
+    umask = da.squeeze(mask_list[var_dict['umask']].data).astype(bool)[...,1:-1]
+    vmask = da.squeeze(mask_list[var_dict['vmask']].data).astype(bool)[...,1:-1]
+
+    tmask2d = da.squeeze(mask_list[var_dict['tmask2d']].data).astype(bool)[...,1:-1]
+    umask2d = da.squeeze(mask_list[var_dict['umask2d']].data).astype(bool)[...,1:-1]
+    vmask2d = da.squeeze(mask_list[var_dict['vmask2d']].data).astype(bool)[...,1:-1]
+
+    e1u = da.squeeze(mask_list[var_dict['e1u']].data)[...,1:-1]
+    e2u = da.squeeze(mask_list[var_dict['e2u']].data)[...,1:-1]
+    e3u = da.squeeze(mask_list[var_dict['e3u']].data)[...,1:-1]
+
+    e1v = da.squeeze(mask_list[var_dict['e1v']].data)[...,1:-1]
+    e2v = da.squeeze(mask_list[var_dict['e2v']].data)[...,1:-1]
+    e3v = da.squeeze(mask_list[var_dict['e3v']].data)[...,1:-1]
+
+    e1t = da.squeeze(mask_list[var_dict['e1t']].data)[...,1:-1]
+    e2t = da.squeeze(mask_list[var_dict['e2t']].data)[...,1:-1]
+
+    #Depth integrate the full velocity fields
+    u_array = da.sum( u_cube.data * umask * e3u , axis=-3)
+    v_array = da.sum( v_cube.data * vmask * e3v , axis=-3)
+
+    #Set masked velocities to zero
+    uthw_array = da.ma.filled(da.ma.masked_invalid(uthw_cube.data), fill_value=0.)
+    vthw_array = da.ma.filled(da.ma.masked_invalid(vthw_cube.data), fill_value=0.)
+
+    utop_array = da.ma.filled(da.ma.masked_invalid(utop_cube.data), fill_value=0.)
+    vtop_array = da.ma.filled(da.ma.masked_invalid(vtop_cube.data), fill_value=0.)
+
+    ubot_array = da.ma.filled(da.ma.masked_invalid(ubot_cube.data), fill_value=0.)
+    vbot_array = da.ma.filled(da.ma.masked_invalid(vbot_cube.data), fill_value=0.)
+
+    #Calculate the compressible part of the full flow >>>>>
+
+    ny = umask2d.shape[-2]
+    nx = umask2d.shape[-1]
+
+    bd_xminvals = np.zeros(nx)
+    bd_xmaxvals = np.zeros(nx)
+    bd_yminvals = np.zeros(ny)
+    bd_ymaxvals = np.zeros(ny)
+    bd_xminnm = True   #Note! - Currently sor_cgrid does not work for non-zero Neumann boundary conditions
+    bd_xmaxnm = True   #        i.e. (Non-zero volume fluxes on the boundaries). This is fine for the CANAL model
+    bd_yminnm = True   #        as it is closed and periodic but annoying for any future work.    
+    bd_ymaxnm = True   #        Try to resolve this before publication!
+    bd_xpd = True
+    bd_ypd = False
+
+    omega = 1.3
+    thresh = 1e-2
+    niterations_max = int(1e6)
+
+
+    #Divergence of the flow
+    roll_mask = np.ones(umask2d.shape, dtype=bool)
+    roll_mask[0,:] = False
+    roll_mask = da.from_array(roll_mask)
+
+    
+    #Calculate the velocity potential using Successive Over Relaxation (SOR) >>>>
+
+    #Divergence of the full flow
+    print("Solving for full flow")
+    D = tmask2d*roll_mask*( u_array * e2u - da.roll(u_array * e2u, 1, axis=-1)
+                          + v_array * e1v - da.roll(v_array * e1v, 1, axis=-2) )/(2*e1t*e2t)
+    D = da.ma.masked_invalid(D)
+    D = da.ma.filled(D, fill_value=0.)
+
+    phi_zero = np.zeros(D.shape)
+
+    phi_full = sor.sor_cgrid(D.compute(), e1u.compute(), e2u.compute(), e1v.compute(),
+                    e2v.compute(), e1t.compute(), e2t.compute(), phi_zero,
+                    bd_xminvals, bd_xmaxvals, bd_yminvals, bd_ymaxvals,
+                    bd_xminnm , bd_xmaxnm, bd_yminnm, bd_ymaxnm,
+                    bd_xpd, bd_ypd, (~tmask2d).compute(), omega, thresh, niterations_max   )
+    phi_full = da.from_array(phi_full)
+
+    #Divergence of the thermal wind component
+    print("Solving for thermal wind component")
+    D = tmask2d*roll_mask*( uthw_array * e2u - da.roll(uthw_array * e2u, 1, axis=-1)
+                          + vthw_array * e1v - da.roll(vthw_array * e1v, 1, axis=-2) )/(2*e1t*e2t)
+    D = da.ma.masked_invalid(D)
+    D = da.ma.filled(D, fill_value=0.)
+
+    phi_zero = np.zeros(D.shape)
+    phi_thw = sor.sor_cgrid(D.compute(), e1u.compute(), e2u.compute(), e1v.compute(),
+                    e2v.compute(), e1t.compute(), e2t.compute(), phi_zero,
+                    bd_xminvals, bd_xmaxvals, bd_yminvals, bd_ymaxvals,
+                    bd_xminnm , bd_xmaxnm, bd_yminnm, bd_ymaxnm,
+                    bd_xpd, bd_ypd, (~tmask2d).compute(), omega, thresh, niterations_max   )
+    phi_thw = da.from_array(phi_thw)
+
+    #Divergence of the top flow
+    print("Solving for top flow")
+
+    D = tmask2d*roll_mask*( utop_array * e2u - da.roll(utop_array * e2u, 1, axis=-1)
+                          + vtop_array * e1v - da.roll(vtop_array * e1v, 1, axis=-2) )/(2*e1t*e2t)
+    D = da.ma.masked_invalid(D)
+    D = da.ma.filled(D, fill_value=0.)
+
+    phi_zero = np.zeros(D.shape)
+    phi_top = sor.sor_cgrid(D.compute(), e1u.compute(), e2u.compute(), e1v.compute(),
+                    e2v.compute(), e1t.compute(), e2t.compute(), phi_zero,
+                    bd_xminvals, bd_xmaxvals, bd_yminvals, bd_ymaxvals,
+                    bd_xminnm , bd_xmaxnm, bd_yminnm, bd_ymaxnm,
+                    bd_xpd, bd_ypd, (~tmask2d).compute(), omega, thresh, niterations_max   )
+    phi_top = da.from_array(phi_top)
+
+    #Divergence of the bottom flow
+    print("Solving for bottom flow")
+    D = tmask2d*roll_mask*( ubot_array * e2u - da.roll(ubot_array * e2u, 1, axis=-1)
+                          + vbot_array * e1v - da.roll(vbot_array * e1v, 1, axis=-2) )/(2*e1t*e2t)
+    D = da.ma.masked_invalid(D)
+    D = da.ma.filled(D, fill_value=0.)
+
+    phi_zero = np.zeros(D.shape)
+    phi_bot = sor.sor_cgrid(D.compute(), e1u.compute(), e2u.compute(), e1v.compute(),
+                    e2v.compute(), e1t.compute(), e2t.compute(), phi_zero,
+                    bd_xminvals, bd_xmaxvals, bd_yminvals, bd_ymaxvals,
+                    bd_xminnm , bd_xmaxnm, bd_yminnm, bd_ymaxnm,
+                    bd_xpd, bd_ypd, (~tmask2d).compute(), omega, thresh, niterations_max   )
+    phi_bot = da.from_array(phi_bot)
+
+    phi_full_cube = xr.DataArray( da.ma.masked_array(phi_full, mask=~tmask2d ).compute(),
+                                 dims=["y", "x"],
+                                 coords={},
+                                 name="phi_full",
+                                 attrs={'units':'m3 s-1'}  )
+
+    phi_thw_cube = xr.DataArray( da.ma.masked_array(phi_thw, mask=~tmask2d ).compute(),
+                                 dims=["y", "x"],
+                                 coords={},
+                                 name="phi_thw",
+                                 attrs={'units':'m3 s-1'}  )
+
+    phi_top_cube = xr.DataArray( da.ma.masked_array(phi_top, mask=~tmask2d ).compute(),
+                                 dims=["y", "x"],
+                                 coords={},
+                                 name="phi_top",
+                                 attrs={'units':'m3 s-1'}  )
+
+    phi_bot_cube = xr.DataArray( da.ma.masked_array(phi_bot, mask=~tmask2d ).compute(),
+                                 dims=["y", "x"],
+                                 coords={},
+                                 name="phi_bot",
+                                 attrs={'units':'m3 s-1'}  )
+
+    # u_compr = ( da.roll(phi_full,-1,axis=-1) - phi_full )/e1u
+    # uthw_compr = ( da.roll(phi_thw,-1,axis=-1) - phi_thw )/e1u 
+    # utop_compr = ( da.roll(phi_top,-1,axis=-1) - phi_top )/e1u
+    # ubot_compr = ( da.roll(phi_bot,-1,axis=-1) - phi_bot )/e1u
+
+    # roll_mask = np.ones(phi_full.shape, dtype=bool)
+    # roll_mask[-1,:] = False
+    # roll_mask = da.from_array(roll_mask)
+
+    # v_compr = ( da.roll(phi_full,-1,axis=-2) - phi_full )/e2v
+    # vthw_compr = ( da.roll(phi_thw,-1,axis=-2) - phi_thw )/e2v 
+    # vtop_compr = ( da.roll(phi_top,-1,axis=-2) - phi_top )/e2v
+    # vbot_compr = ( da.roll(phi_bot,-1,axis=-2) - phi_bot )/e2v
+
+
+    # u_compr_cube = xr.DataArray( vtop_zint.compute(),
+    #                             dims=["time_counter", "y", "x"],
+    #                             coords={"time_counter":time_coord.values},
+    #                             name='vtop_zint',
+    #                             attrs={'units':'m2 s-2'})
+
+
+    return [phi_full_cube, phi_thw_cube, phi_top_cube, phi_bot_cube]
 
 def jp1(M): 
     output = np.roll(M,-1,axis=-2)

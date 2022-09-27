@@ -8,7 +8,7 @@
 
 def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xint_interp_log,
                 nn_rhop, nn_z, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
-                xmin_list, xmax_list, range_labels, ACC_decomp_log):
+                xmin_list, xmax_list, range_labels, ACC_decomp_log, WG_decomp_log):
     """
     Run da code. Waaah
     """
@@ -78,6 +78,14 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
             print(" Range: ", range_labels[i] )
             print(" xmin = ", str(xmin_list[i]))
             print(" xmax = ", str(xmax_list[i]))
+
+    if ACC_decomp_log == True:
+        print("")
+        print("Decomposition of ACC transport")
+
+    if WG_decomp_log == True:
+        print("")
+        print("Decomposition of Weddell Gyre stream function")
 
 
     #Load the dictionary of variable names for this data
@@ -166,10 +174,28 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
         print("")
         print("Decomposing the ACC transport into barotropic and baroclinic parts")
 
-        # acc_decomp_cube_list = streamfunction.acc_decomp(data_list, mask_list, varname_dict)
-        # iris.save(acc_decomp_cube_list, out_dir + "/acc_decomp.nc")
-
         acc_decomp_cube_list = streamfunction.acc_decomp(data_list, mask_list, varname_dict)
         xr.merge(acc_decomp_cube_list).to_netcdf(out_dir + "/acc_decomp.nc")
+
+    if WG_decomp_log == True:
+        print("")
+        print("Decomposing the WG transport into compressible and incompressible parts")
+        print("... also into barotropic and baroclinic parts")
+
+        if ACC_decomp_log != True:
+            try:
+                acc_decomp_cube_list = xr.open_dataset(out_dir + "/acc_decomp.nc")
+            except:
+                print("ACC_decomp_log == False and cannot load acc_decomp.nc")
+                print("Skipping decomposition of WG")
+        else:
+            acc_decomp_cube_list = xr.merge(acc_decomp_cube_list)
+
+        phi_cube_list = streamfunction.WG_decomp( data_list, acc_decomp_cube_list,
+                                                    mask_list, varname_dict )
+
+        xr.merge(phi_cube_list).to_netcdf(out_dir + '/phi.nc')
+
+
 
     return
