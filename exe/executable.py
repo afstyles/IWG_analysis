@@ -12,10 +12,10 @@ data_dir = sys.argv[1]
 
 
 #Input settings
-out_label = "ucompr_test"
+out_label = "XRtest"
 
 #Calculate the stream function and transports
-sf_zint_log = False
+sf_zint_log = True
 WG_bounds = (0,9999999,-9999999, 0) #bounds for the Weddell Gyre transport calculation in km (x_min, x_max, y_min, y_max) [tuple]
                  # = None for no bounds
 
@@ -45,11 +45,13 @@ xmax_list = (4000, 1000, 2500, -1000)
 range_labels = ('noridge', 'ridgewest', 'ridgeeast', 'channel')
 
 #ACC decomp
-ACC_decomp_log = False
+ACC_decomp_log = True
 
 #Separate the time-averaged flow into compressible and incompressible parts using an elliptical solver
 #Use this as a correction for all calculations of stream function
-WG_decomp_log = False
+WG_decomp_log = True
 
 main.run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xint_interp_log, nn_rhop, nn_z, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
                   xmin_list, xmax_list, range_labels, ACC_decomp_log, WG_decomp_log)
+
+

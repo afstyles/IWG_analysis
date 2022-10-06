@@ -191,11 +191,24 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
         else:
             acc_decomp_cube_list = xr.merge(acc_decomp_cube_list)
 
+        if sf_zint_log != True:
+            # try:
+            sf_zint_cube = xr.open_dataset(out_dir + "/sf_zint.nc")
+            # except:
+            #print("sf_zint_cube == False and cannot load sf_zint.nc")
+            #print("Skipping decomposition of WG")
+
+
         phi_cube_list = streamfunction.WG_decomp( data_list, acc_decomp_cube_list,
                                                     mask_list, varname_dict )
 
-        xr.merge(phi_cube_list).to_netcdf(out_dir + '/phi.nc')
+        phi_cube_list = xr.merge(phi_cube_list)
+        phi_cube_list.to_netcdf(out_dir + '/phi.nc')
 
+        u_corr_list = streamfunction.u_corr(  data_list, acc_decomp_cube_list, phi_cube_list, sf_zint_cube, WG_bounds,
+                                              mask_list, varname_dict )
 
+        u_corr_list = xr.merge(u_corr_list)
+        u_corr_list.to_netcdf(out_dir + '/u_corr.nc')
 
     return

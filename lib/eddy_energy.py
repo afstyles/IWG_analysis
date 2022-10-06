@@ -60,9 +60,6 @@ def eddy_kinetic_energy(data_list, mask_list, tvar_window, var_dict):
     """
     
     from cubeprep import CubeListExtract as CLE
-    import iris
-    import iris.coord_categorisation as cat
-    from iris.cube import Cube
     import sys
     import numpy as np
 
@@ -139,9 +136,6 @@ def z_rhop( data_list, mask_list, nn_rhop, var_dict):
     Use linear interpolation to estimate the depth of isopycnals.
     """
     from cubeprep import CubeListExtract as CLE
-    import iris
-    from iris.coords import DimCoord, AuxCoord
-    from iris.cube import Cube
     import numpy as np
     from scipy.interpolate import interp1d
     from fortran_lib import fortran_lib
@@ -258,9 +252,6 @@ def eddy_potential_energy(z_rhop_cube, data_list, mask_list, tvar_window, var_di
     Calculate the eddy potential energy
     """
     from cubeprep import CubeListExtract as CLE
-    import iris
-    import iris.coord_categorisation as cat
-    from iris.cube import Cube
     import numpy as np
     
     #Remove the isopycnal thickness auxiliary coordinate as it is not needed for this calculation.

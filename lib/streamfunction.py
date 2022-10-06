@@ -28,7 +28,6 @@ from cubeprep import CubeListExtract as CLE
 import dask
 import dask.array as da
 import xarray as xr
-from xgcm import Grid
 import numpy as np
 from fortran_lib import fortran_lib
 import warnings
@@ -761,29 +760,80 @@ def WG_decomp( data_list, acc_decomp_cube_list, mask_list, var_dict):
                                  name="phi_bot",
                                  attrs={'units':'m3 s-1'}  )
 
-    # u_compr = ( da.roll(phi_full,-1,axis=-1) - phi_full )/e1u
-    # uthw_compr = ( da.roll(phi_thw,-1,axis=-1) - phi_thw )/e1u 
-    # utop_compr = ( da.roll(phi_top,-1,axis=-1) - phi_top )/e1u
-    # ubot_compr = ( da.roll(phi_bot,-1,axis=-1) - phi_bot )/e1u
-
-    # roll_mask = np.ones(phi_full.shape, dtype=bool)
-    # roll_mask[-1,:] = False
-    # roll_mask = da.from_array(roll_mask)
-
-    # v_compr = ( da.roll(phi_full,-1,axis=-2) - phi_full )/e2v
-    # vthw_compr = ( da.roll(phi_thw,-1,axis=-2) - phi_thw )/e2v 
-    # vtop_compr = ( da.roll(phi_top,-1,axis=-2) - phi_top )/e2v
-    # vbot_compr = ( da.roll(phi_bot,-1,axis=-2) - phi_bot )/e2v
-
-
-    # u_compr_cube = xr.DataArray( vtop_zint.compute(),
-    #                             dims=["time_counter", "y", "x"],
-    #                             coords={"time_counter":time_coord.values},
-    #                             name='vtop_zint',
-    #                             attrs={'units':'m2 s-2'})
-
-
     return [phi_full_cube, phi_thw_cube, phi_top_cube, phi_bot_cube]
+
+def u_corr( data_list, acc_decomp_cube_list, phi_cube_list, sf_zint_cube, WG_bounds, mask_list, var_dict ):
+    """
+    Calculate the velocity of the compressible field using the potential calculated by WG_decomp.
+    Use this corrected velocity to find the corrected stream function.
+    """
+
+    e1u = da.squeeze(mask_list[var_dict['e1u']].data)[...,1:-1]
+    e2u = da.squeeze(mask_list[var_dict['e2u']].data)[...,1:-1]
+    umask2d = da.squeeze(mask_list[var_dict['umask2d']].data)[...,1:-1]
+
+    lat = da.squeeze(mask_list[var_dict['y']].data)[...,1:-1]
+    lon = da.squeeze(mask_list[var_dict['x']].data)[...,1:-1]
+
+    cube_list = []
+
+    for lab in ['full', 'thw', 'top', 'bot']:
+
+        print("lab = ", lab)
+
+        phi      = da.ma.masked_invalid(da.squeeze(phi_cube_list['phi_'+lab].data))
+        ucompr = (da.roll(phi, -1, axis=-1) - phi )/e1u
+
+        if lab =='full':
+            integrand = -ucompr * e2u
+            sf_corr = da.ma.masked_invalid(sf_zint_cube.mean("time_counter").data[...,1:-1]) - integrand.cumsum(axis=-2)/1e6
+        
+        else:
+            u_zint   = acc_decomp_cube_list['u'+lab+'_zint'].mean("time_counter")
+            u_zint   = da.squeeze(u_zint.data)
+            
+            #Calculate rotational part of the flow
+            urot = u_zint - ucompr 
+            integrand = -urot * e2u
+            sf_corr = integrand.cumsum(axis=-2)/1e6
+
+        #Calculate the Weddell Gyre and ACC transport for each time interval
+        if isinstance(WG_bounds,tuple):
+            xmin, xmax, ymin, ymax = WG_bounds
+
+            WG_mask = da.ma.getmaskarray(da.ma.masked_less(lat,ymax)
+                                    *da.ma.masked_greater(lat,ymin)
+                                    *da.ma.masked_less(lon,xmax)
+                                    *da.ma.masked_greater(lat,xmin)).astype(bool)
+
+            WG_transport = (sf_corr * WG_mask).max(axis=(-1,-2))
+
+
+        else:
+            WG_mask = True
+            WG_transport = sf_corr.max(axis=(-1,-2))
+
+
+
+        print(WG_transport.compute())
+
+        sf_corr_cube = xr.DataArray(sf_corr.compute(), 
+                                dims=[ "y", "x"], 
+                                coords={},
+                                name="sf_corr_"+lab, 
+                                attrs={'long_name':'Stream function of corrected flow ('+lab+')',
+                                       'standard_name' : 'ocean_barotropic_streamfunction',
+                                       'units' : 'Sv'})    
+    
+
+        WG_corr_cube = xr.DataArray(WG_transport.compute(),
+                                    name="WG_corr_transport_"+lab,
+                                    attrs={'units': 'Sv', 'WG_bounds': str(WG_bounds)})
+
+        cube_list.append(sf_corr_cube)
+        cube_list.append(WG_corr_cube)    
+
+    return cube_list  
 
 def jp1(M): 
     output = np.roll(M,-1,axis=-2)
