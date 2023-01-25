@@ -10,7 +10,7 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
                 nn_rhop, nn_z, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
                 xmin_list, xmax_list, range_labels, ACC_decomp_log, WG_decomp_log):
     """
-    Run da code. Waaah
+    Runs the program based off of settings in executable.py
     """
     # import iris
     import dask
@@ -111,8 +111,7 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
         print("")
         print("Interpolating the residual overturning stream function onto depth space")
         if sf_xint_log != True:
-            try:
-                # res_ov_cube = iris.load( out_dir + '/res_ov.nc')[0]   
+            try: 
                 res_ov_cube = xr.open_dataset(out_dir + "/res_ov.nc")['res_ov']
                 rhop_depth_cube = xr.open_dataset(out_dir + "/res_ov.nc")['rhop_depth']
             except:
@@ -163,7 +162,6 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
         if eke_log == False:
             try:
                 eke_cube = xr.open_dataset(out_dir + "/eke.nc")['eke']
-                # eke_cube = iris.load(out_dir + "/eke." + str(tvar_window) +".nc")[0]
             except: 
                 "Unable to load eddy kinetic energy data"
 
@@ -192,11 +190,11 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
             acc_decomp_cube_list = xr.merge(acc_decomp_cube_list)
 
         if sf_zint_log != True:
-            # try:
-            sf_zint_cube = xr.open_dataset(out_dir + "/sf_zint.nc")
-            # except:
-            #print("sf_zint_cube == False and cannot load sf_zint.nc")
-            #print("Skipping decomposition of WG")
+            try:
+              sf_zint_cube = xr.open_dataset(out_dir + "/sf_zint.nc")
+            except:
+              print("sf_zint_cube == False and cannot load sf_zint.nc")
+              print("Skipping decomposition of WG")
 
 
         phi_cube_list = streamfunction.WG_decomp( data_list, acc_decomp_cube_list,
