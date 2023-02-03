@@ -10,32 +10,27 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
                 nn_rhop, nn_z, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
                 xmin_list, xmax_list, range_labels, ACC_decomp_log, WG_decomp_log):
     """
-    Runs the program based off of settings in executable.py
+    Runs the program from settings in executable.py
     """
-    # import iris
     import dask
     import dask.array as da
     import xarray as xr
     import numpy as np
     import sys
     import os
-
     sys.path.append(os.path.abspath("../lib"))
-
     import cubeprep
     import eddy_energy
     import streamfunction
     import tracers
     
+    #Define output directory and create it if needed
     out_dir = data_dir + '/OUTPUT.' + out_label + '/'
     if not os.path.exists(out_dir): os.mkdir(out_dir)
 
-
+    #Open the model output file and the mesh_mask file
     data_list = xr.open_mfdataset(data_dir + "/CANAL_grid_*.nc", chunks={"time_counter":1, "x":750, "y":750}, compat='override')
     mask_list = xr.open_dataset(data_dir + "/mesh_mask.nc", chunks={"x":750, "y":750})
-
-    print(data_list)
-    print(mask_list)
 
     print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     print("run_analysis")
@@ -129,7 +124,7 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
     if eke_log == True:
         print("")
         print("Calculating the Eddy Kinetic Energy >>>")
-        eke_cube, eke_zint_cube = eddy_energy.eddy_kinetic_energy(data_list, mask_list, tvar_window, varname_dict)
+        eke_cube, eke_zint_cube = eddy_energy.eddy_kinetic_energy(data_list, mask_list, varname_dict)
 
         eke_cube.to_netcdf(out_dir + "/eke.nc")
         eke_zint_cube.to_netcdf(out_dir + "/eke_zint.nc")

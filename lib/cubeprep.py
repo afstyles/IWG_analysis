@@ -16,43 +16,6 @@ Contains methods:
     var_names --> Returns a dictionary relating generic names of variables to specific variable names for the data.
 """
 
-def CubeListExtract(cube_list, var_name):
-    """
-    Extracts a cube with a specific variable name from a cube list. 
-    If two cubes have the same variable name in the list then the first occurence in the list is extracted
-    cube_list - CubeList object
-    var_name - String, variable name of cube to extract
-    Returns
-    cube - IRIS cube with variable name matching var_name
-    """
-    
-    # try: 
-
-    #     cube = cube_list[var_name]
-
-    #     return cube
-    
-    # except:
-
-    #     print("Variable name not found", var_name)
-
-    #     return
-
-
-    VarNames = [cube_list[i].var_name for i in range(len(cube_list))]
-    
-    try:
-    
-        index = VarNames.index(var_name)
-    
-        return cube_list[index]
-    
-    except:
-        
-        print('Variable name not found: ', var_name)
-        
-        return 
-
 def var_names():
     """
     Load the variable names for cubes that might be used in the analysis
@@ -90,3 +53,26 @@ def var_names():
                 }
 
     return varname_dict
+
+def CubeListExtract(cube_list, var_name):
+    """
+    Extracts a cube with a specific variable name from a cube list. 
+    If two cubes have the same variable name in the list then the first occurence in the list is extracted
+    cube_list - CubeList object
+    var_name - String, variable name of cube to extract
+    Returns
+    cube - IRIS cube with variable name matching var_name
+    """
+    VarNames = [cube_list[i].var_name for i in range(len(cube_list))]
+    
+    try:
+    
+        index = VarNames.index(var_name)
+    
+        return cube_list[index]
+    
+    except:
+        
+        print('Variable name not found: ', var_name)
+        
+        return 

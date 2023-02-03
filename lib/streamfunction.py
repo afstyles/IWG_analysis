@@ -42,16 +42,16 @@ def DepIntSf(data_list, mask_list, var_dict, WG_bounds=None ):
     and calculates the gyre and ACC transport.
 
     INPUT variables
-    data_list - CubeList object of data from NEMO run
-    mask_list - CubeList object of data from mesh_mask
+    data_list - Dataset from NEMO run
+    mask_list - Dataset from mesh_mask
     var_dict - Dictionary of variable names for needed data
     WG_bounds - Tuple object (xmin, xmax, ymin, ymax) [km] describing the rectangular area which the gyre transport is calculated within
                 Set to None if you want an unbounded calculation of the gyre transport 
 
     OUTPUT variables
-    sf_zint_cube - IRIS cube of the depth-integrated stream function (t,y,x) [Sv]
-    WG_transport_cube - IRIS cube of the gyre transport (t) [Sv]
-    ACC_transport_cube - IRIS cube of the ACC transport (t) [Sv]
+    sf_zint_cube - Xarray of the depth-integrated stream function (t,y,x) [Sv]
+    WG_transport_cube - Xarray of the gyre transport (t) [Sv]
+    ACC_transport_cube - Xarray of the ACC transport (t) [Sv]
     """
 
     u_cube = data_list[var_dict['u']]
@@ -212,17 +212,17 @@ def ResOv2depth(res_ov_cube, rhop_depth_cube, data_list, mask_list, var_dict, nn
     Function to project the residual overturning function on to the zonal mean of the isopycnal depth
 
     INPUT variables
-    res_ov_cube - IRIS cube of the residual overturning stream function integrand (t,rho,y,x) [Sv] 
+    res_ov_cube - Xarray of the residual overturning stream function integrand (t,rho,y,x) [Sv] 
                   --> Includes information of the density coordinate used
                   --> Zonally integrate to calculate the residual overturning
-    data_list - CubeList object of data from NEMO run
-    mask_list - CubeList object of data from mesh_mask
+    data_list - Dataset from NEMO run
+    mask_list - Dataset from mesh_mask
     var_dict  - Dictionary of variable names for needed data
     nn_z      - Integer describing number of regular depth coordinates to interpolate to
 
 
     OUTPUT variables
-    res_ov_depth_cube - IRIS cube of the residual overturning stream function interpolated on depth space (nn_z,y) [Sv] 
+    res_ov_depth_cube - Xarray of the residual overturning stream function interpolated on depth space (nn_z,y) [Sv] 
                   --> Includes interpolated depth coordinate and zonal mean of the y coordinate
     """
     rhop_depth = da.ma.masked_greater(da.ma.masked_invalid(rhop_depth_cube.data), 1e10)
@@ -263,13 +263,33 @@ def acc_decomp(data_list, mask_list, var_dict, g=9.8, rhop_0=1027., rhop_ref=102
     Function to decompose the acc into barotropic and baroclinic parts via thermal wind.
 
     INPUT variables
-    data_list - CubeList object of data from NEMO run
-    mask_list - CubeList object of data from mesh_mask
+    data_list - Dataset from NEMO run
+    mask_list - Dataset from mesh_mask
     var_dict  - Dictionary of variable names for needed data
 
 
     OUTPUT variables
+    Dataset including the following variables:
 
+    Variable name | Description
+    ______________|___________________________________________________________________________________
+    utop_zint     : x-velocity at free surface times free surface height
+    ubot_zint     : x-velocity at the sea floor multiplied by sea floor depth
+    uthw_zint     : Depth-integrated x-velocity calculated from thermal wind (relative to sea floor)
+    vtop_zint     : y-velocity at free surface times free surface height
+    vbot_zint     : y-velocity at the sea floor multiplied by sea floor depth
+    vthw_zint     : Depth-integrated y-velocity calculated from thermal wind (relative to sea floor)
+    acc_top       : ACC transport calculated from utop_zint
+    acc_bot       : ACC transport calculated from ubot_zint
+    acc_thw       : ACC transport calculated from uthw_zint
+    rhoS          :  Density on the southern boundary of the model
+    rhoN          :     Density on the northern boundary of the model
+    ff_tN_cube    : Coriolis parameter on the northern boundary of the model
+    ff_tS_cube    : Coriolis paramater on the southern boundary of the model
+    intbound_cube : Density on the northern boundary minus density on the southern boundary
+
+
+    
     """
     u_cube = data_list[var_dict['u']][...,1:-1]
     v_cube = data_list[var_dict['v']][...,1:-1]
@@ -594,8 +614,27 @@ def first_last_index(array, mask, axis):
 
 def WG_decomp( data_list, acc_decomp_cube_list, mask_list, var_dict):
     """
-    Calculate the compressible component of the full, baroclinic, and barotropic flow.
-    Use this to calculate a corrected a stream function
+    Calculate the velocity potential associated with the compressible component of the 
+    full, baroclinic, and barotropic flow.
+    Use this to calculate a corrected stream function
+
+    INPUT variables
+    data_list - Dataset from NEMO run
+    acc_decomp_cube_list - Dataset from acc_decomp
+    mask_list - Dataset from mesh_mask
+    var_dict  - Dictionary of variable names for needed data
+
+
+    OUTPUT variables
+    Dataset including the velocity potential from the following depth-integrated flows:
+
+    Variable name | Description
+    ______________|___________________________________________________________________________________
+    phi_full_cube | Velocity potential of the depth-integrated flow
+    phi_thw_cube  | Velocity potential of the depth-intregrated flow calculated from thermal wind (relative to the sea floor)
+    phi_top_cube  | Velocity potential of the surface velocity multiplied by the free surface height
+    phi_bot_cube  | Velocity potential of the sea floor velocity multiplied by the depth of the sea floor
+    
     """
     from SOR import sor
 
@@ -654,10 +693,10 @@ def WG_decomp( data_list, acc_decomp_cube_list, mask_list, var_dict):
     bd_xmaxvals = np.zeros(nx)
     bd_yminvals = np.zeros(ny)
     bd_ymaxvals = np.zeros(ny)
-    bd_xminnm = True   #Note! - Currently sor_cgrid does not work for non-zero Neumann boundary conditions
+    bd_xminnm = True   #        Note! - Currently sor_cgrid does not work for non-zero Neumann boundary conditions
     bd_xmaxnm = True   #        i.e. (Non-zero volume fluxes on the boundaries). This is fine for the CANAL model
     bd_yminnm = True   #        as it is closed and periodic but annoying for any future work.    
-    bd_ymaxnm = True   #        Try to resolve this before publication!
+    bd_ymaxnm = True   #        
     bd_xpd = True
     bd_ypd = False
 

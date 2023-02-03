@@ -33,33 +33,21 @@ import numpy as np
 from fortran_lib import fortran_lib
 
 
-def eddy_kinetic_energy(data_list, mask_list, tvar_window, var_dict):
+def eddy_kinetic_energy(data_list, mask_list, var_dict):
     """
-    eddy_kinetic_energy(data_list, mask_list, tvar_window, var_dict)
+    eddy_kinetic_energy(data_list, mask_list, var_dict)
 
     Calculates the eddy kinetic energy per unit mass over a specified time window.
 
     INPUT variables
-    data_list   - CubeList object of data from NEMO run
-    mask_list   - CubeList object of data from mesh_mask
-    tvar_window - Describes the time-window for time-averaging
-                  == None        --> Use whole time range 
-                  == 'month'     --> Aggregate by month
-                  == 'season'    --> Aggregate by season
-                  == 'year'      --> Aggregate by year
-                  == n (integer) --> Rolling window of n time steps
-
+    data_list   - Dataset from NEMO run
+    mask_list   - Dataset from mesh_mask
     var_dict    - Dictionary of variable names for needed data
 
 
     OUTPUT variables
-    EKE_cube - IRIS cube of the eddy kinetic energy per unit mass (t,z,y,x) [m2/s2]
-             --> The cube will always have a time axis even if tvar_window = None
-    EKE_zint_cube - IRIS cube of the depth-integrated eddy kinetic energy per unit mass (t,y,x) [m3/s2]
-             --> The cube will always have a time axis even if tvar_window = None  
+    EKE_cube - Dataset of the eddy kinetic energy per unit mass (t,z,y,x) [m2/s2]
     """
-    
-    from cubeprep import CubeListExtract as CLE
     import sys
     import numpy as np
 
@@ -87,18 +75,17 @@ def eddy_kinetic_energy(data_list, mask_list, tvar_window, var_dict):
     e3w = da.squeeze(mask_list[var_dict['e3w']]).data
 
 
-    #Calculate the variances over a specified time window
+    #Calculate the variances over the whole time window
     uvar_cube = u_cube.var(dim="time_counter")
     vvar_cube = v_cube.var(dim="time_counter")
     wvar_cube = w_cube.var(dim="time_counter")
 
     #The variances of u,v, and w must be centred on the same T point
-
     eke = 0.5*tmask*( ( im1(uvar_cube.data*e1u*e2u*e3u*umask)  + (uvar_cube.data*e1u*e2u*e3u*umask) )
         + ( jm1(vvar_cube.data*e1v*e2v*e3v*vmask)  + (vvar_cube.data*e1v*e2v*e3v*vmask) )
         + ( km1(wvar_cube.data*e1t*e2t*e3w*tmask)  + (wvar_cube.data*e1t*e2t*e3w*tmask) ) ) / (2*e1t*e2t*e3t)
 
-
+    #Apply the tmask to eke
     eke  = da.ma.masked_array(eke, mask=da.broadcast_to(~tmask, eke.shape))
     eke_zint = (eke * e3t).sum(axis=-3) 
 

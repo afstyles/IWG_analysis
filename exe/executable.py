@@ -45,11 +45,11 @@ xmax_list = (4000, 1000, 2500, -1000)
 range_labels = ('noridge', 'ridgewest', 'ridgeeast', 'channel')
 
 #ACC decomp
-ACC_decomp_log = True
+ACC_decomp_log = False
 
 #Separate the time-averaged flow into compressible and incompressible parts using an elliptical solver
 #Use this as a correction for all calculations of stream function
-WG_decomp_log = True
+WG_decomp_log = False
 
 main.run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xint_interp_log, nn_rhop, nn_z, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
                   xmin_list, xmax_list, range_labels, ACC_decomp_log, WG_decomp_log)
