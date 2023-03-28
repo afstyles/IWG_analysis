@@ -7,8 +7,9 @@
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xint_interp_log,
-                nn_rhop, nn_z, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
-                xmin_list, xmax_list, range_labels, ACC_decomp_log, WG_decomp_log):
+                nn_rhop, nn_z, sponge_sample_dict, tvar_window, eke_log, tracer_xint_log,
+                vel_xint_log, eke_xint_log, xmin_list, xmax_list, range_labels, ACC_decomp_log,
+                WG_decomp_log):
     """
     Runs the program from settings in executable.py
     """
@@ -99,7 +100,7 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
     if sf_xint_log == True:
         print("")
         print("Calculating stream function of the x-integrated flow (Overturning) >>>")
-        res_ov_cube, rhop_depth_cube = streamfunction.ResidualOverturning(data_list, mask_list, nn_rhop, varname_dict)
+        res_ov_cube, rhop_depth_cube = streamfunction.ResidualOverturning(data_list, mask_list, nn_rhop, sponge_sample_dict, varname_dict)
         xr.merge([res_ov_cube, rhop_depth_cube]).to_netcdf(out_dir + '/res_ov.nc')
 
     if sf_xint_interp_log == True:

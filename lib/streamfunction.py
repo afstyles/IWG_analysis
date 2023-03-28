@@ -115,7 +115,7 @@ def DepIntSf(data_list, mask_list, var_dict, WG_bounds=None ):
 
     return sf_zint_cube, WG_transport_cube, ACC_transport_cube 
 
-def ResidualOverturning(data_list, mask_list, nn_rhop, var_dict):
+def ResidualOverturning(data_list, mask_list, nn_rhop, sponge_sample_dict, var_dict):
     """
     Calculates the residual overturning stream function
 
@@ -145,6 +145,7 @@ def ResidualOverturning(data_list, mask_list, nn_rhop, var_dict):
     deptht = da.squeeze(mask_list[var_dict['deptht']].data)
     tmask = da.squeeze(mask_list[var_dict['tmask']].data).astype(bool)
     vmask = da.squeeze(mask_list[var_dict['vmask']].data).astype(bool)
+    y_t = da.squeeze(mask_list[var_dict['y']].data)
 
     #Calculate density centred on v points
     rhop_v = (tmask * rhop_cube.data * e1t * e2t) + da.roll(tmask * rhop_cube.data * e1t * e2t, -1, axis=-2)
@@ -156,11 +157,19 @@ def ResidualOverturning(data_list, mask_list, nn_rhop, var_dict):
     rhop_v = da.ma.masked_array(rhop_v, mask= da.broadcast_to(~(vmask*roll_mask),rhop_v.shape) )
     rhop_v = da.ma.masked_invalid(rhop_v)
 
-    rhop_min = da.min(rhop_v).compute()
-    rhop_max = da.max(rhop_v).compute()
-    rhop_coord = np.linspace(rhop_min-0.2, rhop_max+0.2, num=nn_rhop)
+    if sponge_sample_dict["sponge_sample_log"] == True:
+        z = np.flip(np.linspace(-sponge_sample_dict["depthmax"], -sponge_sample_dict["depthmin"], num=nn_rhop))
+        rhop_coord = rhop_profile(z, T_top=sponge_sample_dict["T_top"], delta_z=sponge_sample_dict["delta_z"],
+                                  a0=sponge_sample_dict["a0"], T0=sponge_sample_dict["T0"], S0=sponge_sample_dict["S0"],
+                                  rau0=sponge_sample_dict["rau0"])
 
-    drhop = rhop_coord[1] - rhop_coord[0]
+    else:
+        rhop_min = da.min(rhop_v).compute()
+        rhop_max = da.max(rhop_v).compute()
+        rhop_coord = np.linspace(rhop_min-0.2, rhop_max+0.2, num=nn_rhop)
+        
+
+    # drhop = rhop_coord[1] - rhop_coord[0]
 
     nt = rhop_cube.shape[0]
     res_ov_list = []
@@ -225,7 +234,7 @@ def ResOv2depth(res_ov_cube, rhop_depth_cube, data_list, mask_list, var_dict, nn
     res_ov_depth_cube - Xarray of the residual overturning stream function interpolated on depth space (nn_z,y) [Sv] 
                   --> Includes interpolated depth coordinate and zonal mean of the y coordinate
     """
-    rhop_depth = da.ma.masked_greater(da.ma.masked_invalid(rhop_depth_cube.data), 1e10)
+    rhop_depth = da.ma.masked_greater(da.ma.masked_invalid(rhop_depth_cube.data), 4.5e3)
     rhop_depth_xmean = da.mean(da.mean(rhop_depth, axis=-1),axis=0)
 
     tm_res_ov = da.mean( da.sum(da.ma.masked_invalid(res_ov_cube.data),axis=-1), axis=0 )
@@ -874,6 +883,14 @@ def u_corr( data_list, acc_decomp_cube_list, phi_cube_list, sf_zint_cube, WG_bou
 
     return cube_list  
 
+def rhop_profile(z, T_top=10., delta_z=1500., a0=0.28e-3, T0=10., S0=35., rau0=1026.):
+
+    Tprofile = T_top * np.exp(z/delta_z)
+
+    output = rau0 * ( 1 - a0 * (Tprofile - T0))
+
+    return output
+
 def jp1(M): 
     output = np.roll(M,-1,axis=-2)
     return output
@@ -1095,3 +1112,4 @@ def ZonIntSF(data_list, mask_list, var_dict):
     return [acc_ssh_cube, acc_bot_cube, intbound_cube, beta_cube]
 """
 
+                                                

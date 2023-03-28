@@ -12,18 +12,31 @@ data_dir = sys.argv[1]
 
 
 #Input settings
-out_label = "XRtest"
+out_label = "XRtest_overturning"
 
 #Calculate the stream function and transports
-sf_zint_log = True
+sf_zint_log = False
 WG_bounds = (0,9999999,-9999999, 0) #bounds for the Weddell Gyre transport calculation in km (x_min, x_max, y_min, y_max) [tuple]
                  # = None for no bounds
 
 #Calculate the residual overturning stream function
-sf_xint_log = False
-nn_rhop = 11    # Maximum number of isopycnal levels
-sf_xint_interp_log = False
+sf_xint_log = True
+nn_rhop = 31    # Maximum number of isopycnal levels
+sf_xint_interp_log = True
 nn_z = 31        # Number of z levels to interpolate to
+sponge_sample_dict={
+"sponge_sample_log": True, #Calculate sample density surfaces from the model sponge.
+"T_top": 10.,     #(rn_sponge_tomax in namelist)
+"delta_z": 1500.,#(rn_depth_decay in namelist)
+"a0": 0.28e-3,     #(rn_a0_user in namelist)
+"T0": 10.,
+"S0": 35.,
+"rau0": 1026.,
+"depthmin": 0.,
+"depthmax": 5000.,
+}
+
+
 
 #Calculate eddy energies and isopycnal variability
 eke_log = False     # Eddy kinetic energy
@@ -51,7 +64,9 @@ ACC_decomp_log = False
 #Use this as a correction for all calculations of stream function
 WG_decomp_log = False
 
-main.run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xint_interp_log, nn_rhop, nn_z, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
+main.run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, 
+                  sf_xint_log, sf_xint_interp_log, nn_rhop, nn_z, 
+                  sponge_sample_dict, tvar_window, eke_log, tracer_xint_log, vel_xint_log, eke_xint_log,
                   xmin_list, xmax_list, range_labels, ACC_decomp_log, WG_decomp_log)
 
 
