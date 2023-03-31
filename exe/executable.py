@@ -21,7 +21,7 @@ WG_bounds = (0,9999999,-9999999, 0) #bounds for the Weddell Gyre transport calcu
 
 #Calculate the residual overturning stream function
 sf_xint_log = True
-nn_rhop = 31    # Maximum number of isopycnal levels
+nn_rhop = 21    # Maximum number of isopycnal levels
 sf_xint_interp_log = True
 nn_z = 31        # Number of z levels to interpolate to
 sponge_sample_dict={
@@ -33,7 +33,7 @@ sponge_sample_dict={
 "S0": 35.,
 "rau0": 1026.,
 "depthmin": 0.,
-"depthmax": 5000.,
+"depthmax": 3200.,
 }
 
 

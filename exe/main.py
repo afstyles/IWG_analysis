@@ -114,12 +114,12 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
                 print("sf_xint_log == False and cannot load res_ov_cube")
                 print("Skipping interpolation of residual overturning stream function !")
 
-        try:
-            res_ov_depth_cube = streamfunction.ResOv2depth(res_ov_cube, rhop_depth_cube, data_list, mask_list, varname_dict, nn_z=nn_z)
-            res_ov_depth_cube.to_netcdf(out_dir + '/res_ov_depth.nc')
+        # try:
+        res_ov_depth_cube = streamfunction.ResOv2depth(res_ov_cube, rhop_depth_cube, data_list, mask_list, varname_dict, nn_z=nn_z)
+        res_ov_depth_cube.to_netcdf(out_dir + '/res_ov_depth.nc')
 
-        except: 
-            print("Failed to convert to depth coordinates")
+        # except: 
+        # print("Failed to convert to depth coordinates")
 
 
     if eke_log == True:

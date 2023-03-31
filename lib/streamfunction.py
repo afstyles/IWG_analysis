@@ -31,7 +31,7 @@ import xarray as xr
 import numpy as np
 from fortran_lib import fortran_lib
 import warnings
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata, interp1d
 from SOR import sor
 
 def DepIntSf(data_list, mask_list, var_dict, WG_bounds=None ):
@@ -236,27 +236,80 @@ def ResOv2depth(res_ov_cube, rhop_depth_cube, data_list, mask_list, var_dict, nn
     """
     rhop_depth = da.ma.masked_greater(da.ma.masked_invalid(rhop_depth_cube.data), 4.5e3)
     rhop_depth_xmean = da.mean(da.mean(rhop_depth, axis=-1),axis=0)
+    
+    e3t = da.squeeze(mask_list[var_dict['e3t']].data)
+    tmask = da.squeeze(mask_list[var_dict['tmask']].data).astype(bool)
+
+
+    depth_array = (e3t * tmask).sum(axis=-3)
+    depth_array = da.ma.masked_less_equal(depth_array, 0 )
+    depth_xmax = da.max(depth_array, axis=-1)
+    depth_coord = da.linspace(0, da.max(depth_xmax).compute(), num=nn_z)
+
 
     tm_res_ov = da.mean( da.sum(da.ma.masked_invalid(res_ov_cube.data),axis=-1), axis=0 )
 
-    
     tm_res_ov = da.ma.masked_greater(tm_res_ov, 1e10)
     tm_res_ov = da.ma.masked_less(tm_res_ov, -1e10)
 
     lat_1d = da.mean( da.squeeze(mask_list[var_dict['y']].data), axis=-1 )
-    lat = da.broadcast_to(lat_1d, tm_res_ov.shape)
+    # lat = da.broadcast_to(lat_1d, tm_res_ov.shape)
+
+    # depth_points = rhop_depth_xmean[~da.ma.getmaskarray(tm_res_ov)]
+    # lat_points = lat[~da.ma.getmaskarray(tm_res_ov)]
+    # res_ov_points = tm_res_ov[~da.ma.getmaskarray(tm_res_ov)]
+
+    # depth_coord = da.linspace(0, da.max(depth_points).compute(), num=nn_z)
+    # lat_grid, depth_grid = da.meshgrid(lat_1d, depth_coord)
+
+    @da.as_gufunc(signature="(p),(p),(z)->(z)", axes=[(-2),(-2),(0),(-2)], allow_rechunk=True)
+    def gufoo(tm_res_ov, rhop_depth_xmean, depth_coord):
+        ny = tm_res_ov.shape[0]
+        nz = len(depth_coord)
+        out_grid = np.full([ny,nz], np.nan)
 
 
-    depth_points = rhop_depth_xmean[~da.ma.getmaskarray(tm_res_ov)]
-    lat_points = lat[~da.ma.getmaskarray(tm_res_ov)]
-    res_ov_points = tm_res_ov[~da.ma.getmaskarray(tm_res_ov)]
+        for j in range(ny):
+            res_ov_col = tm_res_ov[j,:]
+            rhop_depth_xmean_col = rhop_depth_xmean[j,:]
 
-    depth_coord = da.linspace(0, da.max(depth_points).compute(), num=nn_z)
-    lat_grid, depth_grid = da.meshgrid(lat_1d, depth_coord)
+            tmp_mask = np.ma.make_mask([False] + [ (rhop_depth_xmean_col[k] < np.max(rhop_depth_xmean_col[:k])) for k in range(1,len(rhop_depth_xmean_col))])
+            tmp_mask = tmp_mask + np.ma.getmaskarray(res_ov_col)
 
-    out_grid = griddata( (lat_points.compute(), depth_points.compute()), res_ov_points.compute(),
-                         (lat_grid.compute(),depth_grid.compute()), method='linear')
-    out_grid = np.ma.masked_invalid(out_grid) #Values that are extrapolated from the hull of the data is masked
+            res_ov_points = res_ov_col[~tmp_mask] 
+            res_ov_points = np.append(res_ov_points,[0.])
+
+           
+
+
+            rhop_depth_xmean_points = rhop_depth_xmean_col[~tmp_mask] 
+            rhop_depth_xmean_points = np.append(rhop_depth_xmean_points, [0.])
+
+
+
+            if not np.ma.is_masked(depth_xmax[j].compute()): 
+                rhop_depth_xmean_points = np.append(rhop_depth_xmean_points, [depth_xmax[j].compute()])
+                res_ov_points = np.append(res_ov_points,[0.])
+
+            npoints = np.min([len(rhop_depth_xmean_points), len(res_ov_points)])
+
+            if npoints <= 1: continue
+
+            interp_func = interp1d(rhop_depth_xmean_points, res_ov_points, kind='linear', fill_value=np.nan, bounds_error = False)
+            out_col = interp_func(depth_coord)
+            out_grid[j,:] = out_col
+
+        out_grid = np.ma.masked_invalid(out_grid)
+
+        return out_grid
+
+    out_grid = gufoo(tm_res_ov, rhop_depth_xmean, depth_coord)
+
+    # print(out_grid.shape)
+
+    # out_grid = griddata( (lat_points.compute(), depth_points.compute()), res_ov_points.compute(),
+    #                      (lat_grid.compute(),depth_grid.compute()), method='linear')
+    # out_grid = np.ma.masked_invalid(out_grid) #Values that are extrapolated from the hull of the data is masked
 
     res_ov_depth_cube = xr.DataArray(out_grid,
                                      dims=["InterpDepth", "y_xmean"],
@@ -1112,4 +1165,3 @@ def ZonIntSF(data_list, mask_list, var_dict):
     return [acc_ssh_cube, acc_bot_cube, intbound_cube, beta_cube]
 """
 
-                                                

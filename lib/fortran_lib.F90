@@ -29,8 +29,8 @@ module fortran_lib
         !
         logical, intent(out) :: output_mask(SIZE(v_array,1),SIZE(rhop_coord,1),SIZE(v_array,3),SIZE(v_array,4)) !Mask for both output arrays (True = Masked)
         !
-        integer :: ii, ij, ik, ip, it, ni, nj, nk, nt, np, nk_avail, ip_min, kind
-        real :: v_single, e3_single, rhop_single, irhop, drhop, rhop_close
+        integer :: ii, ij, ik, ip, it, ni, nj, nk, nt, np, nk_avail, ip_min, kind, ik_min, iip
+        real :: v_single, e3_single, rhop_single, irhop, drhop, rhop_close, res_ov_ipm1, rhop_depth_ipm1
         real :: v_column(SIZE(v_array,2))
         logical :: vmask_column(SIZE(v_array,2))
         real :: rhop_column(SIZE(v_array,2))
@@ -122,24 +122,53 @@ module fortran_lib
                                 !
                             end do
                             !
+                            !
+                            ! Set temporary counting variables to zero before searching for density surfaces
+                            ik_min = 1
+                            res_ov_ipm1 = 0.
+                            rhop_depth_ipm1 = 0.
+                            first_bath_rho_log = .false.
+                            !
                             do ip = 1,np
                                 !
                                 irhop = rhop_coord(ip)
                                 !
-                                !Determine if isopycnal lies outside the domain
-                                ext_rho_log = ( (irhop < rhop_bounds(1)).OR.(irhop > rhop_bounds(nk_avail+1)))
+                                !Determine if isopycnal lies outside the discrete domain below the previous isopycnal
+                                ext_rho_log = ( (irhop < rhop_bounds(ik_min)))!.OR.(irhop > rhop_bounds(nk_avail+1)))
+                                !
+
                                 
-                                !Determine if isopycnal is the first one that lies in the bathymetry
-                                !Extrapolation needed in this case
-                                if (ip /= 1) then
-                                   first_bath_rho_log = ((rhop_coord(ip-1) >= rhop_bounds(1))   &
-                                                        .AND.(rhop_coord(ip-1) <= rhop_bounds(nk_avail+1)))
-                                   first_bath_rho_log = (first_bath_rho_log.AND.(irhop > rhop_bounds(nk_avail+1)))
-                                else
-                                   first_bath_rho_log = .false.
-                                end if
+                                ! Determine if isopycnal is the first one that lies in the bathymetry
+                                ! Extrapolation needed in this case
+                                ! if (ip /= 1) then
+                                !    first_bath_rho_log = ((rhop_coord(ip-1) >= rhop_bounds(1))   &
+                                !                         .AND.(rhop_coord(ip-1) <= rhop_bounds(nk_avail+1)))
+                                !    first_bath_rho_log = (first_bath_rho_log.AND.(irhop > rhop_bounds(nk_avail+1)))
+                                ! else
+                                !    first_bath_rho_log = .false.
+                                ! end if
                                
-                                if (ext_rho_log.AND.(.NOT.first_bath_rho_log) ) then
+                                ! If this isopycnal is the first to hit the sea floor, set to full depth integral
+                                ! and mask all values for higher density isopycnals
+                                ! if (ext_rho_log.AND.first_bath_rho_log) then
+                                !     res_ov(it,ip,ij,ii) = SUM(v_column*e3_column, MASK=.NOT.vmask_column)
+                                !     rhop_depth(it,ip,ij,ii) = SUM(e3_column, MASK=.NOT.vmask_column)
+                                !     if (ip /= np) then
+                                !         do iip = ip+1, np
+                                !             res_ov(it,iip, ij, ii) = 0.
+                                !             rhop_depth(it,iip, ij, ii) = 0.
+                                !             output_mask(it,iip, ij, ii) = .true.
+                                !         end do
+                                !     end if
+
+                                !     exit
+                                
+                                ! end if
+
+                                ! else
+
+                                ! if (ext_rho_log.AND.(.NOT.first_bath_rho_log) ) then
+                                if (ext_rho_log.OR.first_bath_rho_log) then
                                     output_mask(it,ip,ij,ii) = .true.
                                     res_ov(it,ip,ij,ii) = 0.
                                     rhop_depth(it,ip,ij,ii) = 0.
@@ -151,21 +180,41 @@ module fortran_lib
                                 
                                 else
                                     !
-                                    do ik = 1,nk_avail
+                                    do ik = ik_min,nk_avail
                                         
                                         if ( ( irhop >= rhop_bounds(ik) ).AND.(irhop < rhop_bounds(ik+1)) ) then
-                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii)                          &
-                                            + v_column(ik)*e3_column(ik)*(irhop - rhop_bounds(ik))             &
-                                            /(rhop_bounds(ik+1)-rhop_bounds(ik))
-
-                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii)                  &
+                                            rhop_depth(it,ip,ij,ii) = rhop_depth_ipm1                   &
                                             + e3_column(ik) * (irhop - rhop_bounds(ik))                        &
                                             /(rhop_bounds(ik+1)-rhop_bounds(ik))
 
+                                            !If density surface is not deeper than previous surface, mask and ignore
+                                            if ( (ip > 1).AND.(rhop_depth(it,ip,ij,ii) <  rhop_depth(it,ip-1,ij,ii)) ) then
+                                                output_mask(it,ip,ij,ii) = .true.
+                                                res_ov(it,ip,ij,ii) = 0.
+
+                                            !Otherwise calculate final part of residual overturning
+                                            else
+                                                res_ov(it,ip,ij,ii) = res_ov_ipm1                          &
+                                                + v_column(ik)*e3_column(ik)*(irhop - rhop_bounds(ik))             &
+                                                /(rhop_bounds(ik+1)-rhop_bounds(ik))
+
+                                            end if
+
                                             exit
                                         else
-                                            res_ov(it,ip,ij,ii) = res_ov(it,ip,ij,ii) + v_column(ik)*e3_column(ik)
-                                            rhop_depth(it,ip,ij,ii) = rhop_depth(it,ip,ij,ii) + e3_column(ik)
+
+                                            res_ov_ipm1 = res_ov_ipm1 + v_column(ik)*e3_column(ik)
+                                            res_ov(it,ip,ij,ii) = res_ov_ipm1
+
+                                            rhop_depth_ipm1 = rhop_depth_ipm1 + e3_column(ik)
+                                            rhop_depth(it,ip,ij,ii) = rhop_depth_ipm1
+                                            ik_min = ik_min + 1
+
+                                            if (ik == nk_avail) then
+                                                first_bath_rho_log = .true.
+                                            end if
+
+
                                         end if
 
 
@@ -194,6 +243,13 @@ module fortran_lib
         !     end do
         ! end do
         
+        ! do it = 1,nt
+        !     res_ov(it,np,:,:) = SUM(v_array(it,:,:,:)*e3(:,:,:), DIM=1, MASK=.NOT.vmask)
+        !     rhop_depth(it,np,:,:) = SUM(e3, DIM=1, MASK=.NOT.vmask)
+        !     output_mask(it,np,:,:) = ALL(vmask, DIM=1)
+        ! end do
+        
+
         do it = 1,nt
             do ip = 1,np
                 res_ov(it,ip,:,:) = res_ov(it,ip,:,:)*e1(:,:)  !Multiply by cell width to calculate volume flux
