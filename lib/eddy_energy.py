@@ -87,7 +87,9 @@ def eddy_kinetic_energy(data_list, mask_list, var_dict):
 
     #Apply the tmask to eke
     eke  = da.ma.masked_array(eke, mask=da.broadcast_to(~tmask, eke.shape))
+    e3t  = da.ma.masked_array(e3t, mask=da.broadcast_to(~tmask, e3t.shape))
     eke_zint = (eke * e3t).sum(axis=-3) 
+    eke_zmean = eke_zint / e3t.sum(axis=-3)
 
     eke_cube = xr.DataArray(eke.compute(), 
                             dims=["model_level", "y", "x"],
@@ -102,7 +104,13 @@ def eddy_kinetic_energy(data_list, mask_list, var_dict):
                             attrs={'long_name': "eddy kinetic energy (zint)",
                                    'units' : 'm3 s-2'} )
 
-    return eke_cube, eke_zint_cube
+    eke_zmean_cube = xr.DataArray(eke_zmean.compute(),
+                            dims=["y", "x"],
+                            name="eke_zmean",
+                            attrs={'long_name': "eddy kinetic energy (zmean)",
+                                   'units' : 'm2 s-2'} )
+
+    return eke_cube, eke_zint_cube, eke_zmean_cube
 
 def im1(M): 
     output = da.roll(M, 1, axis=-1)

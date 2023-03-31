@@ -20,9 +20,9 @@ WG_bounds = (0,9999999,-9999999, 0) #bounds for the Weddell Gyre transport calcu
                  # = None for no bounds
 
 #Calculate the residual overturning stream function
-sf_xint_log = True
+sf_xint_log = False
 nn_rhop = 21    # Maximum number of isopycnal levels
-sf_xint_interp_log = True
+sf_xint_interp_log = False
 nn_z = 31        # Number of z levels to interpolate to
 sponge_sample_dict={
 "sponge_sample_log": True, #Calculate sample density surfaces from the model sponge.
@@ -39,7 +39,7 @@ sponge_sample_dict={
 
 
 #Calculate eddy energies and isopycnal variability
-eke_log = False     # Eddy kinetic energy
+eke_log = True     # Eddy kinetic energy
 tvar_window = None  # Time-averaging window for eddy energy calculation in days
                       # = None to use full time window
 

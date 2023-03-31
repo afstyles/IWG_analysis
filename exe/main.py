@@ -125,10 +125,11 @@ def run_analysis(data_dir, out_label, sf_zint_log, WG_bounds, sf_xint_log, sf_xi
     if eke_log == True:
         print("")
         print("Calculating the Eddy Kinetic Energy >>>")
-        eke_cube, eke_zint_cube = eddy_energy.eddy_kinetic_energy(data_list, mask_list, varname_dict)
+        eke_cube, eke_zint_cube, eke_zmean_cube = eddy_energy.eddy_kinetic_energy(data_list, mask_list, varname_dict)
 
         eke_cube.to_netcdf(out_dir + "/eke.nc")
         eke_zint_cube.to_netcdf(out_dir + "/eke_zint.nc")
+        eke_zmean_cube.to_netcdf(out_dir + "/eke_zmean.nc")
         print("Complete -------------------------")
 
     #Calculate the zonal mean of tracers over specified ranges
