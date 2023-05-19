@@ -132,9 +132,11 @@ def ResidualOverturning(data_list, mask_list, nn_rhop, sponge_sample_dict, var_d
                   --> Zonally integrate to calculate the residual overturning
     """
 
+    if sponge_sample_dict["eiv_log"] == True:
+        v_cube = data_list[var_dict['v']] + data_list[var_dict['v_eiv']] 
+    else:
+        v_cube = data_list[var_dict['v']] 
 
-
-    v_cube = data_list[var_dict['v']]
     rhop_cube = data_list[var_dict['rho']]
     e1v = da.squeeze(mask_list[var_dict['e1v']].data)
     e2v = da.squeeze(mask_list[var_dict['e2v']].data)

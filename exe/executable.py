@@ -12,7 +12,7 @@ data_dir = sys.argv[1]
 
 
 #Input settings
-out_label = "XRtest_overturning"
+out_label = "XRtest"
 
 #Calculate the stream function and transports
 sf_zint_log = False
@@ -26,6 +26,7 @@ sf_xint_interp_log = False
 nn_z = 31        # Number of z levels to interpolate to
 sponge_sample_dict={
 "sponge_sample_log": True, #Calculate sample density surfaces from the model sponge.
+"eiv_log" : True, #Add an eddy-induced velocity component (only needed for Eddy-parametrized models)
 "T_top": 10.,     #(rn_sponge_tomax in namelist)
 "delta_z": 1500.,#(rn_depth_decay in namelist)
 "a0": 0.28e-3,     #(rn_a0_user in namelist)
@@ -33,7 +34,7 @@ sponge_sample_dict={
 "S0": 35.,
 "rau0": 1026.,
 "depthmin": 0.,
-"depthmax": 3200.,
+"depthmax": 3600.,
 }
 
 

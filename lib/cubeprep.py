@@ -23,6 +23,7 @@ def var_names():
     varname_dict = { 'u'  : 'uoce' ,     # x velocity
                  'v'  : 'voce' ,         # y velocity
                  'w'  : 'woce' ,         # z velocity
+                 'v_eiv' : "voce_eiv",   # eddy-induced component of the meridional velocity
                  'rho': 'swsigthet' ,    # Density
                  'temp': 'toce',         # Temperature
                  'sal' : 'soce',         # Salinity
