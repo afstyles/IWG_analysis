@@ -1,0 +1,10 @@
+name: canal
+channels:
+  - defaults
+dependencies:
+  - dask
+  - netcdf4
+  - xarray
+  - bottleneck
+  - scipy
+prefix: /home/users/afstyles/.conda/envs/canal
